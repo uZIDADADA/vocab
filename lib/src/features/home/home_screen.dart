@@ -98,7 +98,7 @@ class _TodayView extends StatelessWidget {
               _ReviewRow(
                 word: 'serendipity',
                 meaning: '意外发现美好事物',
-                color: VocabColors.lime,
+                color: VocabColors.coral,
               ),
               SizedBox(height: 10),
               _ReviewRow(
@@ -125,7 +125,7 @@ class _TopBar extends StatelessWidget {
           width: 42,
           height: 42,
           decoration: BoxDecoration(
-            color: VocabColors.lime,
+            color: VocabColors.cream,
             borderRadius: BorderRadius.circular(14),
           ),
           alignment: Alignment.center,
@@ -217,14 +217,14 @@ class _DailyGoalCard extends StatelessWidget {
               value: .72,
               minHeight: 9,
               backgroundColor: Color(0xFF343431),
-              valueColor: AlwaysStoppedAnimation(VocabColors.lime),
+              valueColor: AlwaysStoppedAnimation(VocabColors.coral),
             ),
           ),
           const SizedBox(height: 18),
           FilledButton.icon(
             onPressed: _noop,
             style: FilledButton.styleFrom(
-              backgroundColor: VocabColors.lime,
+              backgroundColor: VocabColors.cream,
               foregroundColor: VocabColors.ink,
               minimumSize: const Size.fromHeight(52),
             ),
@@ -473,7 +473,7 @@ class _ComingSoonView extends StatelessWidget {
             width: 72,
             height: 72,
             decoration: BoxDecoration(
-              color: VocabColors.lime,
+              color: VocabColors.cream,
               borderRadius: BorderRadius.circular(24),
             ),
             child: Icon(icon, size: 34),
