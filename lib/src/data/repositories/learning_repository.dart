@@ -56,6 +56,26 @@ class LearningRepository {
         );
   }
 
+  Stream<List<InboxItem>> watchPendingInbox() {
+    return _database.watchPendingInboxEntries().map(
+      (rows) => rows
+          .map(
+            (row) => InboxItem(
+              id: row.id,
+              kind: row.kind,
+              content: row.content,
+              source: row.source,
+              createdAt: row.createdAt,
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+
+  Future<void> markInboxProcessed(String id) {
+    return _database.markInboxEntryProcessed(id);
+  }
+
   Stream<LearningStats> watchStats() {
     return _database.watchStats().map(
       (stats) => LearningStats(

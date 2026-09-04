@@ -9,6 +9,7 @@ import '../../infrastructure/ai/ai_chat_provider.dart';
 import '../../infrastructure/pronunciation/pronunciation_service.dart';
 import '../../infrastructure/sync/kiss_worker_vocabulary_service.dart';
 import '../coach/coach_view.dart';
+import '../inbox/inbox_page.dart';
 import '../library/library_view.dart';
 import '../profile/profile_view.dart';
 import '../today/today_view.dart';
@@ -41,6 +42,29 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _tabIndex = 0;
+  int _librarySegment = 0;
+  int _libraryNavigationVersion = 0;
+
+  void _selectTab(int index) {
+    if (_tabIndex == index) return;
+    setState(() => _tabIndex = index);
+  }
+
+  void _openInbox() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => InboxPage(repository: widget.repository),
+      ),
+    );
+  }
+
+  void _openLibrary(int segment) {
+    setState(() {
+      _librarySegment = segment;
+      _libraryNavigationVersion++;
+      _tabIndex = 1;
+    });
+  }
 
   static const _destinations = <NavigationDestination>[
     NavigationDestination(
@@ -73,10 +97,23 @@ class _HomeScreenState extends State<HomeScreen> {
         child: IndexedStack(
           index: _tabIndex,
           children: [
-            TodayView(repository: widget.repository),
+            TodayView(
+              repository: widget.repository,
+              onOpenCoach: () => _selectTab(2),
+              onOpenInbox: _openInbox,
+              onOpenWords: () => _openLibrary(0),
+              onOpenPatterns: () => _openLibrary(1),
+            ),
             LibraryView(
+              key: ValueKey('library-$_libraryNavigationVersion'),
               repository: widget.repository,
               pronunciationService: widget.pronunciationService,
+              selectedSegment: _librarySegment,
+              onSegmentChanged: (value) {
+                if (_librarySegment != value) {
+                  setState(() => _librarySegment = value);
+                }
+              },
             ),
             CoachView(
               settingsRepository: widget.aiSettingsRepository,
@@ -97,7 +134,7 @@ class _HomeScreenState extends State<HomeScreen> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tabIndex,
         destinations: _destinations,
-        onDestinationSelected: (value) => setState(() => _tabIndex = value),
+        onDestinationSelected: _selectTab,
       ),
     );
   }

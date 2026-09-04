@@ -287,6 +287,23 @@ class AppDatabase extends _$AppDatabase {
     return statement.watch();
   }
 
+  Stream<List<InboxEntry>> watchPendingInboxEntries() {
+    return (select(inboxEntries)
+          ..where((row) => row.isProcessed.equals(false))
+          ..orderBy([(row) => OrderingTerm.desc(row.createdAt)]))
+        .watch();
+  }
+
+  Future<void> markInboxEntryProcessed(String id) {
+    return (update(inboxEntries)..where((row) => row.id.equals(id))).write(
+      InboxEntriesCompanion(
+        isProcessed: const Value(true),
+        isDirty: const Value(true),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
   Stream<DatabaseStats> watchStats() {
     return customSelect(
       '''

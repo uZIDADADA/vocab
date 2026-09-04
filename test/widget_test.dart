@@ -32,9 +32,93 @@ void main() {
     expect(find.text('早上好，继续开口'), findsOneWidget);
     expect(find.textContaining('个待复习'), findsWidgets);
 
+    await tester.tap(find.byTooltip('学习日历'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('完整的日期视图会在后续版本开放'), findsOneWidget);
+    await tester.tap(find.text('知道了'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('提醒'));
+    await tester.pumpAndSettle();
+    expect(find.text('学习提醒'), findsOneWidget);
+    expect(find.textContaining('提醒功能尚未开放'), findsOneWidget);
+    await tester.tap(find.text('知道了'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('今日 3 个待复习'));
+    await tester.pumpAndSettle();
+    expect(find.text('今日复习'), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('3 条待整理'));
+    await tester.pumpAndSettle();
+    expect(find.text('待整理示例 1'), findsOneWidget);
+    expect(find.text('完成整理'), findsNWidgets(3));
+    await tester.ensureVisible(find.text('完成整理').first);
+    await tester.tap(find.text('完成整理').first);
+    await _pumpDatabaseFrames(tester);
+    expect(find.text('待整理示例 1'), findsNothing);
+    await tester.pageBack();
+    await _pumpDatabaseFrames(tester);
+    expect(find.text('2 条待整理'), findsOneWidget);
+
+    await tester.tap(find.text('继续对话'));
+    await tester.pump();
+    expect(find.text('AI 口语教练'), findsOneWidget);
+
+    await tester.tap(find.text('今日'));
+    await tester.pump();
+
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('metric-total-words')),
+      300,
+      scrollable: find.descendant(
+        of: find.byKey(const PageStorageKey<String>('today-scroll')),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.tap(find.byKey(const Key('metric-total-words')));
+    await _pumpDatabaseFrames(tester);
+    expect(find.text('我的词句'), findsOneWidget);
+    expect(find.text('serendipity'), findsOneWidget);
+
+    await tester.tap(find.text('今日'));
+    await tester.pump();
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('metric-total-patterns')),
+      300,
+      scrollable: find.descendant(
+        of: find.byKey(const PageStorageKey<String>('today-scroll')),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.tap(find.byKey(const Key('metric-total-patterns')));
+    await _pumpDatabaseFrames(tester);
+    expect(find.text('What I find most useful is …'), findsOneWidget);
+
+    await tester.tap(find.text('今日'));
+    await tester.pump();
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('metric-review-count')),
+      300,
+      scrollable: find.descendant(
+        of: find.byKey(const PageStorageKey<String>('today-scroll')),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.tap(find.byKey(const Key('metric-review-count')));
+    await tester.pumpAndSettle();
+    expect(find.text('复习记录'), findsOneWidget);
+    expect(find.textContaining('还没有复习记录'), findsOneWidget);
+    await tester.tap(find.text('知道了'));
+    await tester.pumpAndSettle();
+
     await tester.tap(find.text('词句'));
     await _pumpDatabaseFrames(tester);
     expect(find.text('我的词句'), findsOneWidget);
+    await tester.tap(find.text('单词'));
+    await _pumpDatabaseFrames(tester);
     expect(find.text('serendipity'), findsOneWidget);
     await tester.tap(find.byTooltip('播放 Merriam-Webster 发音').first);
     await tester.pump();

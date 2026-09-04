@@ -10,18 +10,21 @@ class LibraryView extends StatefulWidget {
   const LibraryView({
     required this.repository,
     required this.pronunciationService,
+    required this.selectedSegment,
+    required this.onSegmentChanged,
     super.key,
   });
 
   final LearningRepository repository;
   final PronunciationService pronunciationService;
+  final int selectedSegment;
+  final ValueChanged<int> onSegmentChanged;
 
   @override
   State<LibraryView> createState() => _LibraryViewState();
 }
 
 class _LibraryViewState extends State<LibraryView> {
-  int _segment = 0;
   String _query = '';
   String? _playingWordId;
 
@@ -50,8 +53,8 @@ class _LibraryViewState extends State<LibraryView> {
                   ),
                   const SizedBox(height: 20),
                   _SegmentedTabs(
-                    selected: _segment,
-                    onChanged: (value) => setState(() => _segment = value),
+                    selected: widget.selectedSegment,
+                    onChanged: widget.onSegmentChanged,
                   ),
                   const SizedBox(height: 14),
                   TextField(
@@ -63,11 +66,11 @@ class _LibraryViewState extends State<LibraryView> {
                   ),
                   const SizedBox(height: 18),
                   _LibraryContent(
-                    key: ValueKey('$_segment:$_query'),
+                    key: ValueKey('${widget.selectedSegment}:$_query'),
                     repository: widget.repository,
                     playingWordId: _playingWordId,
                     onPronounce: _playPronunciation,
-                    segment: _segment,
+                    segment: widget.selectedSegment,
                     query: _query,
                   ),
                 ],
@@ -80,7 +83,7 @@ class _LibraryViewState extends State<LibraryView> {
           bottom: 20,
           child: FloatingActionButton(
             heroTag: 'library-add',
-            tooltip: _segment == 0 ? '添加单词' : '添加句式',
+            tooltip: widget.selectedSegment == 0 ? '添加单词' : '添加句式',
             onPressed: _showAddDialog,
             backgroundColor: VocabColors.lime,
             foregroundColor: VocabColors.ink,
@@ -115,7 +118,7 @@ class _LibraryViewState extends State<LibraryView> {
   Future<void> _showAddDialog() async {
     final primaryController = TextEditingController();
     final secondaryController = TextEditingController();
-    final isWord = _segment == 0;
+    final isWord = widget.selectedSegment == 0;
 
     final shouldSave = await showDialog<bool>(
       context: context,

@@ -76,6 +76,22 @@ class LearningStats {
   int get dueCount => dueWordCount + duePatternCount;
 }
 
+class InboxItem {
+  const InboxItem({
+    required this.id,
+    required this.kind,
+    required this.content,
+    required this.source,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String kind;
+  final String content;
+  final String source;
+  final DateTime createdAt;
+}
+
 class ImportedVocabularyCandidate {
   const ImportedVocabularyCandidate({
     required this.term,

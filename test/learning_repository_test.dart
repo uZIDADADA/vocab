@@ -64,6 +64,22 @@ void main() {
     expect(stats.reviewCount, 1);
   });
 
+  test('lists pending inbox entries and marks them processed', () async {
+    final initialItems = await repository.watchPendingInbox().first;
+    expect(initialItems, hasLength(3));
+
+    await repository.markInboxProcessed(initialItems.first.id);
+
+    final remainingItems = await repository.watchPendingInbox().first;
+    final stats = await repository.watchStats().first;
+    expect(remainingItems, hasLength(2));
+    expect(
+      remainingItems.any((item) => item.id == initialItems.first.id),
+      isFalse,
+    );
+    expect(stats.inboxCount, 2);
+  });
+
   test(
     'stores AI metadata in SQLite and API key in the secret store',
     () async {

@@ -7,9 +7,20 @@ import '../../widgets/vocab_ui.dart';
 import '../review/review_session_page.dart';
 
 class TodayView extends StatelessWidget {
-  const TodayView({required this.repository, super.key});
+  const TodayView({
+    required this.repository,
+    required this.onOpenCoach,
+    required this.onOpenInbox,
+    required this.onOpenWords,
+    required this.onOpenPatterns,
+    super.key,
+  });
 
   final LearningRepository repository;
+  final VoidCallback onOpenCoach;
+  final VoidCallback onOpenInbox;
+  final VoidCallback onOpenWords;
+  final VoidCallback onOpenPatterns;
 
   @override
   Widget build(BuildContext context) {
@@ -26,19 +37,31 @@ class TodayView extends StatelessWidget {
               padding: pagePadding,
               sliver: SliverList.list(
                 children: [
-                  const _TodayHeader(),
+                  _TodayHeader(stats: stats),
                   const SizedBox(height: 22),
                   _OverviewCard(stats: stats),
                   const SizedBox(height: 16),
                   _ReviewCard(stats: stats, repository: repository),
                   const SizedBox(height: 14),
-                  const _ContinueCard(),
+                  _ContinueCard(onTap: onOpenCoach),
                   const SizedBox(height: 14),
-                  _InboxCard(count: stats.inboxCount),
+                  _InboxCard(count: stats.inboxCount, onTap: onOpenInbox),
                   const SizedBox(height: 24),
                   const SectionHeader(title: '今日概览'),
                   const SizedBox(height: 12),
-                  _MetricsRow(stats: stats),
+                  _MetricsRow(
+                    stats: stats,
+                    onOpenWords: onOpenWords,
+                    onOpenPatterns: onOpenPatterns,
+                    onOpenReviewSummary: () => _showStatusSheet(
+                      context,
+                      icon: Icons.bar_chart_rounded,
+                      title: '复习记录',
+                      message: stats.reviewCount == 0
+                          ? '还没有复习记录。完成一次复习后，这里会自动累计。'
+                          : '已累计完成 ${stats.reviewCount} 次复习。完整的复习历史会在后续版本开放。',
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -50,7 +73,9 @@ class TodayView extends StatelessWidget {
 }
 
 class _TodayHeader extends StatelessWidget {
-  const _TodayHeader();
+  const _TodayHeader({required this.stats});
+
+  final LearningStats stats;
 
   @override
   Widget build(BuildContext context) {
@@ -61,17 +86,71 @@ class _TodayHeader extends StatelessWidget {
         RoundActionButton(
           icon: Icons.calendar_today_outlined,
           tooltip: '学习日历',
-          onPressed: noop,
+          onPressed: () => _showStatusSheet(
+            context,
+            icon: Icons.calendar_month_outlined,
+            title: '学习日历',
+            message:
+                '今天有 ${stats.dueCount} 项待复习，已累计完成 ${stats.reviewCount} 次复习。完整的日期视图会在后续版本开放。',
+          ),
         ),
         const SizedBox(width: 8),
         RoundActionButton(
           icon: Icons.notifications_none_rounded,
           tooltip: '提醒',
-          onPressed: noop,
+          onPressed: () => _showStatusSheet(
+            context,
+            icon: Icons.notifications_none_rounded,
+            title: '学习提醒',
+            message: '提醒功能尚未开放。目前打开 Vocab 后，首页会自动显示当天到期的复习内容。',
+          ),
         ),
       ],
     );
   }
+}
+
+void _showStatusSheet(
+  BuildContext context, {
+  required IconData icon,
+  required String title,
+  required String message,
+}) {
+  showModalBottomSheet<void>(
+    context: context,
+    useSafeArea: true,
+    backgroundColor: VocabColors.surface,
+    builder: (context) => Padding(
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CircleIcon(
+            icon: icon,
+            background: VocabColors.limeSoft,
+            foreground: VocabColors.green,
+            size: 52,
+          ),
+          const SizedBox(height: 14),
+          Text(title, style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 8),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 18),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('知道了'),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _OverviewCard extends StatelessWidget {
@@ -241,14 +320,16 @@ class _ReviewCard extends StatelessWidget {
 }
 
 class _ContinueCard extends StatelessWidget {
-  const _ContinueCard();
+  const _ContinueCard({required this.onTap});
+
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return SoftCard(
       color: VocabColors.coralSoft,
       borderColor: VocabColors.coralSoft,
-      onTap: noop,
+      onTap: onTap,
       child: Row(
         children: [
           const CircleIcon(
@@ -286,14 +367,15 @@ class _ContinueCard extends StatelessWidget {
 }
 
 class _InboxCard extends StatelessWidget {
-  const _InboxCard({required this.count});
+  const _InboxCard({required this.count, required this.onTap});
 
   final int count;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return SoftCard(
-      onTap: noop,
+      onTap: onTap,
       child: Row(
         children: [
           const CircleIcon(
@@ -326,9 +408,17 @@ class _InboxCard extends StatelessWidget {
 }
 
 class _MetricsRow extends StatelessWidget {
-  const _MetricsRow({required this.stats});
+  const _MetricsRow({
+    required this.stats,
+    required this.onOpenWords,
+    required this.onOpenPatterns,
+    required this.onOpenReviewSummary,
+  });
 
   final LearningStats stats;
+  final VoidCallback onOpenWords;
+  final VoidCallback onOpenPatterns;
+  final VoidCallback onOpenReviewSummary;
 
   @override
   Widget build(BuildContext context) {
@@ -336,25 +426,31 @@ class _MetricsRow extends StatelessWidget {
       children: [
         Expanded(
           child: _MetricTile(
+            key: const Key('metric-total-words'),
             icon: Icons.auto_stories_outlined,
             label: '总单词',
             value: '${stats.wordCount}',
+            onTap: onOpenWords,
           ),
         ),
         SizedBox(width: 10),
         Expanded(
           child: _MetricTile(
+            key: const Key('metric-total-patterns'),
             icon: Icons.star_outline_rounded,
             label: '总句式',
             value: '${stats.patternCount}',
+            onTap: onOpenPatterns,
           ),
         ),
         SizedBox(width: 10),
         Expanded(
           child: _MetricTile(
+            key: const Key('metric-review-count'),
             icon: Icons.bar_chart_rounded,
             label: '复习次数',
             value: '${stats.reviewCount}',
+            onTap: onOpenReviewSummary,
           ),
         ),
       ],
@@ -367,15 +463,19 @@ class _MetricTile extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.value,
+    required this.onTap,
+    super.key,
   });
 
   final IconData icon;
   final String label;
   final String value;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return SoftCard(
+      onTap: onTap,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
       child: Column(
         children: [
