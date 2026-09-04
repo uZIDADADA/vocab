@@ -75,3 +75,45 @@ class LearningStats {
 
   int get dueCount => dueWordCount + duePatternCount;
 }
+
+class ImportedVocabularyCandidate {
+  const ImportedVocabularyCandidate({
+    required this.term,
+    required this.definition,
+    this.phonetic,
+    this.examples = const [],
+    this.sourceTimestamp,
+  });
+
+  final String term;
+  final String definition;
+  final String? phonetic;
+  final List<String> examples;
+  final DateTime? sourceTimestamp;
+}
+
+class VocabularyImportResult {
+  const VocabularyImportResult({
+    required this.importedCount,
+    required this.skippedCount,
+  });
+
+  final int importedCount;
+  final int skippedCount;
+}
+
+class ReviewQueueItem {
+  const ReviewQueueItem({
+    required this.itemType,
+    required this.itemId,
+    required this.prompt,
+    required this.answer,
+    required this.label,
+  });
+
+  final String itemType;
+  final String itemId;
+  final String prompt;
+  final String answer;
+  final String label;
+}

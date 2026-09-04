@@ -12,12 +12,14 @@ flowchart LR
     APP --> DB[(Local SQLite)]
     APP --> SYNC[Sync engine]
     APP --> AI[AI provider adapters]
+    APP --> KISS[KISS-Worker read-only importer]
     SYNC --> VAULT[Encrypted vault]
     VAULT --> DAV[WebDAV]
     DAV --> CF[Cloudflare Worker]
     CF --> R2[(R2)]
     AI --> OA[OpenAI-compatible APIs]
     AI --> OTHER[Other providers]
+    KISS --> KV[(Cloudflare KV)]
     APP -. optional later .-> ACCOUNT[Account service]
     ACCOUNT -.-> D1[(D1 / account metadata)]
 ```
@@ -36,7 +38,8 @@ introduced without coupling every screen to a database package.
 ## Data strategy
 
 - Store vocabulary, patterns, review history, and progress in SQLite.
-- Store WebDAV passwords/tokens and AI keys in Android secure storage, not SQLite.
+- Store WebDAV passwords/tokens, AI keys, and all KISS-Worker connection values
+  in Android secure storage, not SQLite.
 - Encrypt the exported sync package before upload.
 - Sync immutable learning events plus versioned records to reduce conflicts.
 - Keep endpoint metadata in the local profile and include only non-secret config

@@ -1,26 +1,27 @@
 import 'package:flutter/material.dart';
 
 abstract final class VocabColors {
-  static const ink = Color(0xFF171715);
-  static const canvas = Color(0xFFFAF8F3);
-  static const surface = Color(0xFFFFFEFA);
-  static const softSurface = Color(0xFFF4F2ED);
-  static const lime = Color(0xFFD8FA3F);
-  static const limeSoft = Color(0xFFF1FFC0);
-  static const coral = Color(0xFFFF7A5C);
-  static const coralSoft = Color(0xFFFFE9DF);
-  static const cyan = Color(0xFF59C9F3);
-  static const cyanSoft = Color(0xFFE4F6FD);
-  static const green = Color(0xFF42B84A);
-  static const muted = Color(0xFF72726B);
-  static const line = Color(0xFFE5E3DC);
+  static const ink = Color(0xFF20221F);
+  static const canvas = Color(0xFFF7F8F6);
+  static const surface = Color(0xFFFDFEFC);
+  static const softSurface = Color(0xFFF0F2EF);
+  static const lime = Color(0xFFCBE39D);
+  static const limeSoft = Color(0xFFF0F5E7);
+  static const coral = Color(0xFFE58A76);
+  static const coralSoft = Color(0xFFF8ECE8);
+  static const coralInk = Color(0xFF8A4B3E);
+  static const cyan = Color(0xFF79B8C8);
+  static const cyanSoft = Color(0xFFEAF3F5);
+  static const green = Color(0xFF67A773);
+  static const muted = Color(0xFF71766F);
+  static const line = Color(0xFFE1E5E0);
 }
 
 abstract final class VocabTheme {
   static ThemeData get light {
     const scheme = ColorScheme.light(
       primary: VocabColors.ink,
-      onPrimary: Colors.white,
+      onPrimary: VocabColors.surface,
       secondary: VocabColors.lime,
       onSecondary: VocabColors.ink,
       tertiary: VocabColors.coral,

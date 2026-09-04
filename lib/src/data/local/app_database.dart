@@ -125,6 +125,38 @@ class AppSettings extends Table {
   Set<Column<Object>> get primaryKey => {key};
 }
 
+class ConversationSessions extends Table {
+  TextColumn get id => text()();
+
+  TextColumn get title => text().withDefault(const Constant('新对话'))();
+
+  DateTimeColumn get createdAt => dateTime()();
+
+  DateTimeColumn get updatedAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
+class ConversationMessages extends Table {
+  TextColumn get id => text()();
+
+  TextColumn get conversationId => text().references(
+    ConversationSessions,
+    #id,
+    onDelete: KeyAction.cascade,
+  )();
+
+  TextColumn get role => text()();
+
+  TextColumn get content => text()();
+
+  DateTimeColumn get createdAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
 class DatabaseStats {
   const DatabaseStats({
     required this.wordCount,
@@ -152,6 +184,8 @@ class DatabaseStats {
     ReviewEvents,
     InboxEntries,
     AppSettings,
+    ConversationSessions,
+    ConversationMessages,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -160,7 +194,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -169,7 +203,11 @@ class AppDatabase extends _$AppDatabase {
       await _createIndexes();
     },
     onUpgrade: (migrator, from, to) async {
-      // Future schema versions add their explicit migrations here.
+      if (from < 2) {
+        await migrator.createTable(conversationSessions);
+        await migrator.createTable(conversationMessages);
+        await _createConversationIndexes();
+      }
     },
     beforeOpen: (details) async {
       await customStatement('PRAGMA foreign_keys = ON');
@@ -196,6 +234,18 @@ class AppDatabase extends _$AppDatabase {
     await customStatement(
       'CREATE INDEX IF NOT EXISTS review_item_idx '
       'ON review_events(item_type, item_id, reviewed_at)',
+    );
+    await _createConversationIndexes();
+  }
+
+  Future<void> _createConversationIndexes() async {
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS conversation_updated_idx '
+      'ON conversation_sessions(updated_at DESC)',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS conversation_message_idx '
+      'ON conversation_messages(conversation_id, created_at)',
     );
   }
 
@@ -270,6 +320,23 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
+  Future<String?> getSetting(String key) async {
+    final row = await (select(
+      appSettings,
+    )..where((row) => row.key.equals(key))).getSingleOrNull();
+    return row?.value;
+  }
+
+  Future<void> setSetting(String key, String value) {
+    return into(appSettings).insertOnConflictUpdate(
+      AppSettingsCompanion.insert(
+        key: key,
+        value: value,
+        updatedAt: DateTime.now(),
+      ),
+    );
+  }
+
   Future<void> addVocabulary({
     required String id,
     required String term,
@@ -277,6 +344,7 @@ class AppDatabase extends _$AppDatabase {
     String? partOfSpeech,
     String tag = '手动添加',
     String source = '手动添加',
+    String? sourceContext,
   }) async {
     final now = DateTime.now();
     await into(vocabularyEntries).insert(
@@ -287,6 +355,7 @@ class AppDatabase extends _$AppDatabase {
         partOfSpeech: Value(_emptyToNull(partOfSpeech)),
         tag: Value(tag),
         source: Value(source),
+        sourceContext: Value(_emptyToNull(sourceContext)),
         reviewDueAt: Value(now),
         createdAt: now,
         updatedAt: now,
@@ -367,16 +436,12 @@ class AppDatabase extends _$AppDatabase {
   }) async {
     assert(rating >= 1 && rating <= 4, 'rating must be between 1 and 4');
     final now = DateTime.now();
-    final nextDue = now.add(
-      Duration(
-        days: switch (rating) {
-          1 => 0,
-          2 => 1,
-          3 => 3,
-          _ => 7,
-        },
-      ),
-    );
+    final nextDue = now.add(switch (rating) {
+      1 => const Duration(minutes: 10),
+      2 => const Duration(days: 1),
+      3 => const Duration(days: 3),
+      _ => const Duration(days: 7),
+    });
 
     await transaction(() async {
       await into(reviewEvents).insert(
@@ -412,6 +477,159 @@ class AppDatabase extends _$AppDatabase {
             updatedAt: Value(now),
           ),
         );
+      }
+    });
+  }
+
+  Future<List<VocabularyEntry>> getDueVocabulary() {
+    final now = DateTime.now();
+    return (select(vocabularyEntries)
+          ..where(
+            (row) =>
+                row.deletedAt.isNull() &
+                (row.reviewDueAt.isNull() |
+                    row.reviewDueAt.isSmallerOrEqualValue(now)),
+          )
+          ..orderBy([(row) => OrderingTerm.asc(row.reviewDueAt)]))
+        .get();
+  }
+
+  Future<List<SentencePattern>> getDueSentencePatterns() {
+    final now = DateTime.now();
+    return (select(sentencePatterns)
+          ..where(
+            (row) =>
+                row.deletedAt.isNull() &
+                (row.reviewDueAt.isNull() |
+                    row.reviewDueAt.isSmallerOrEqualValue(now)),
+          )
+          ..orderBy([(row) => OrderingTerm.asc(row.reviewDueAt)]))
+        .get();
+  }
+
+  Future<bool> hasActiveVocabularyTerm(String term) async {
+    final normalized = term.trim().toLowerCase();
+    if (normalized.isEmpty) return true;
+    final row = await customSelect(
+      'SELECT 1 FROM vocabulary_entries '
+      'WHERE deleted_at IS NULL AND lower(trim(term)) = ? LIMIT 1',
+      variables: [Variable<String>(normalized)],
+      readsFrom: {vocabularyEntries},
+    ).getSingleOrNull();
+    return row != null;
+  }
+
+  Future<bool> hasActiveSentencePattern(String pattern) async {
+    final normalized = pattern.trim().toLowerCase();
+    if (normalized.isEmpty) return true;
+    final row = await customSelect(
+      'SELECT 1 FROM sentence_patterns '
+      'WHERE deleted_at IS NULL AND lower(trim(pattern)) = ? LIMIT 1',
+      variables: [Variable<String>(normalized)],
+      readsFrom: {sentencePatterns},
+    ).getSingleOrNull();
+    return row != null;
+  }
+
+  Future<List<ConversationSession>> listConversationSessions() {
+    return (select(
+      conversationSessions,
+    )..orderBy([(row) => OrderingTerm.desc(row.updatedAt)])).get();
+  }
+
+  Future<List<ConversationMessage>> getConversationMessages(
+    String conversationId,
+  ) {
+    return (select(conversationMessages)
+          ..where((row) => row.conversationId.equals(conversationId))
+          ..orderBy([(row) => OrderingTerm.asc(row.createdAt)]))
+        .get();
+  }
+
+  Future<void> createConversation({
+    required String id,
+    required String initialMessageId,
+    required String initialMessage,
+  }) async {
+    final now = DateTime.now();
+    await transaction(() async {
+      await into(conversationSessions).insert(
+        ConversationSessionsCompanion.insert(
+          id: id,
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+      await into(conversationMessages).insert(
+        ConversationMessagesCompanion.insert(
+          id: initialMessageId,
+          conversationId: id,
+          role: 'assistant',
+          content: initialMessage,
+          createdAt: now,
+        ),
+      );
+    });
+  }
+
+  Future<void> addConversationMessage({
+    required String id,
+    required String conversationId,
+    required String role,
+    required String content,
+  }) async {
+    final now = DateTime.now();
+    await transaction(() async {
+      await into(conversationMessages).insert(
+        ConversationMessagesCompanion.insert(
+          id: id,
+          conversationId: conversationId,
+          role: role,
+          content: content.trim(),
+          createdAt: now,
+        ),
+      );
+      await (update(conversationSessions)
+            ..where((row) => row.id.equals(conversationId)))
+          .write(ConversationSessionsCompanion(updatedAt: Value(now)));
+    });
+  }
+
+  Future<void> renameConversation(String id, String title) {
+    return (update(
+      conversationSessions,
+    )..where((row) => row.id.equals(id))).write(
+      ConversationSessionsCompanion(
+        title: Value(title.trim()),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
+  Future<void> deleteConversation(String id) async {
+    await (delete(
+      conversationSessions,
+    )..where((row) => row.id.equals(id))).go();
+  }
+
+  Future<void> clearConversations() async {
+    await delete(conversationSessions).go();
+  }
+
+  Future<void> pruneConversations(int limit) async {
+    final keep = limit.clamp(1, 100);
+    final stale = await customSelect(
+      'SELECT id FROM conversation_sessions '
+      'ORDER BY updated_at DESC LIMIT -1 OFFSET ?',
+      variables: [Variable<int>(keep)],
+      readsFrom: {conversationSessions},
+    ).get();
+    if (stale.isEmpty) return;
+    await transaction(() async {
+      for (final row in stale) {
+        await (delete(
+          conversationSessions,
+        )..where((session) => session.id.equals(row.read<String>('id')))).go();
       }
     });
   }

@@ -1,15 +1,39 @@
 import 'package:flutter/material.dart';
 
+import '../../data/repositories/ai_settings_repository.dart';
+import '../../data/repositories/conversation_repository.dart';
+import '../../data/repositories/kiss_worker_settings_repository.dart';
 import '../../data/repositories/learning_repository.dart';
+import '../../data/repositories/pronunciation_settings_repository.dart';
+import '../../infrastructure/ai/ai_chat_provider.dart';
+import '../../infrastructure/pronunciation/pronunciation_service.dart';
+import '../../infrastructure/sync/kiss_worker_vocabulary_service.dart';
 import '../coach/coach_view.dart';
 import '../library/library_view.dart';
 import '../profile/profile_view.dart';
 import '../today/today_view.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({required this.repository, super.key});
+  const HomeScreen({
+    required this.repository,
+    required this.aiSettingsRepository,
+    required this.aiChatProvider,
+    required this.conversationRepository,
+    required this.pronunciationSettingsRepository,
+    required this.pronunciationService,
+    required this.kissWorkerSettingsRepository,
+    required this.kissVocabularyService,
+    super.key,
+  });
 
   final LearningRepository repository;
+  final AiSettingsRepository aiSettingsRepository;
+  final AiChatProvider aiChatProvider;
+  final ConversationRepository conversationRepository;
+  final PronunciationSettingsRepository pronunciationSettingsRepository;
+  final PronunciationService pronunciationService;
+  final KissWorkerSettingsRepository kissWorkerSettingsRepository;
+  final KissVocabularyService kissVocabularyService;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -50,9 +74,23 @@ class _HomeScreenState extends State<HomeScreen> {
           index: _tabIndex,
           children: [
             TodayView(repository: widget.repository),
-            LibraryView(repository: widget.repository),
-            CoachView(),
-            ProfileView(repository: widget.repository),
+            LibraryView(
+              repository: widget.repository,
+              pronunciationService: widget.pronunciationService,
+            ),
+            CoachView(
+              settingsRepository: widget.aiSettingsRepository,
+              conversationRepository: widget.conversationRepository,
+              learningRepository: widget.repository,
+              provider: widget.aiChatProvider,
+            ),
+            ProfileView(
+              repository: widget.repository,
+              pronunciationSettingsRepository:
+                  widget.pronunciationSettingsRepository,
+              kissWorkerSettingsRepository: widget.kissWorkerSettingsRepository,
+              kissVocabularyService: widget.kissVocabularyService,
+            ),
           ],
         ),
       ),

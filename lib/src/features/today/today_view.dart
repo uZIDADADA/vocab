@@ -4,6 +4,7 @@ import '../../data/repositories/learning_repository.dart';
 import '../../domain/learning_models.dart';
 import '../../theme/vocab_theme.dart';
 import '../../widgets/vocab_ui.dart';
+import '../review/review_session_page.dart';
 
 class TodayView extends StatelessWidget {
   const TodayView({required this.repository, super.key});
@@ -29,7 +30,7 @@ class TodayView extends StatelessWidget {
                   const SizedBox(height: 22),
                   _OverviewCard(stats: stats),
                   const SizedBox(height: 16),
-                  _ReviewCard(stats: stats),
+                  _ReviewCard(stats: stats, repository: repository),
                   const SizedBox(height: 14),
                   const _ContinueCard(),
                   const SizedBox(height: 14),
@@ -184,9 +185,10 @@ class _ReviewProgress extends StatelessWidget {
 }
 
 class _ReviewCard extends StatelessWidget {
-  const _ReviewCard({required this.stats});
+  const _ReviewCard({required this.stats, required this.repository});
 
   final LearningStats stats;
+  final LearningRepository repository;
 
   @override
   Widget build(BuildContext context) {
@@ -194,7 +196,11 @@ class _ReviewCard extends StatelessWidget {
       color: VocabColors.lime,
       borderColor: VocabColors.lime,
       padding: const EdgeInsets.all(20),
-      onTap: noop,
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => ReviewSessionPage(repository: repository),
+        ),
+      ),
       child: Row(
         children: [
           const CircleIcon(

@@ -2,13 +2,19 @@ import 'package:flutter/material.dart';
 
 import '../../data/repositories/learning_repository.dart';
 import '../../domain/learning_models.dart';
+import '../../infrastructure/pronunciation/pronunciation_service.dart';
 import '../../theme/vocab_theme.dart';
 import '../../widgets/vocab_ui.dart';
 
 class LibraryView extends StatefulWidget {
-  const LibraryView({required this.repository, super.key});
+  const LibraryView({
+    required this.repository,
+    required this.pronunciationService,
+    super.key,
+  });
 
   final LearningRepository repository;
+  final PronunciationService pronunciationService;
 
   @override
   State<LibraryView> createState() => _LibraryViewState();
@@ -17,6 +23,7 @@ class LibraryView extends StatefulWidget {
 class _LibraryViewState extends State<LibraryView> {
   int _segment = 0;
   String _query = '';
+  String? _playingWordId;
 
   @override
   Widget build(BuildContext context) {
@@ -58,6 +65,8 @@ class _LibraryViewState extends State<LibraryView> {
                   _LibraryContent(
                     key: ValueKey('$_segment:$_query'),
                     repository: widget.repository,
+                    playingWordId: _playingWordId,
+                    onPronounce: _playPronunciation,
                     segment: _segment,
                     query: _query,
                   ),
@@ -81,6 +90,26 @@ class _LibraryViewState extends State<LibraryView> {
         ),
       ],
     );
+  }
+
+  Future<void> _playPronunciation(WordItem item) async {
+    if (_playingWordId != null) return;
+    setState(() => _playingWordId = item.id);
+    try {
+      await widget.pronunciationService.play(item.term);
+    } on PronunciationException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('发音播放失败，请稍后重试。')));
+      }
+    } finally {
+      if (mounted) setState(() => _playingWordId = null);
+    }
   }
 
   Future<void> _showAddDialog() async {
@@ -155,12 +184,16 @@ class _LibraryViewState extends State<LibraryView> {
 class _LibraryContent extends StatelessWidget {
   const _LibraryContent({
     required this.repository,
+    required this.playingWordId,
+    required this.onPronounce,
     required this.segment,
     required this.query,
     super.key,
   });
 
   final LearningRepository repository;
+  final String? playingWordId;
+  final ValueChanged<WordItem> onPronounce;
   final int segment;
   final String query;
 
@@ -197,6 +230,8 @@ class _LibraryContent extends StatelessWidget {
                     accent: _accentColor(index),
                     isFavorite: item.isFavorite,
                     showAudio: true,
+                    isAudioBusy: playingWordId == item.id,
+                    onAudio: () => onPronounce(item),
                     onFavorite: () => repository.toggleWordFavorite(item),
                   ),
                 ),
@@ -379,6 +414,8 @@ class _LibraryCard extends StatelessWidget {
     required this.isFavorite,
     required this.onFavorite,
     this.showAudio = false,
+    this.isAudioBusy = false,
+    this.onAudio,
   });
 
   final IconData icon;
@@ -392,6 +429,8 @@ class _LibraryCard extends StatelessWidget {
   final Color accent;
   final bool isFavorite;
   final bool showAudio;
+  final bool isAudioBusy;
+  final VoidCallback? onAudio;
   final VoidCallback onFavorite;
 
   @override
@@ -425,9 +464,29 @@ class _LibraryCard extends StatelessWidget {
                       ),
                     ),
                     if (showAudio)
-                      const Padding(
-                        padding: EdgeInsets.only(left: 5),
-                        child: Icon(Icons.volume_up_outlined, size: 18),
+                      Padding(
+                        padding: const EdgeInsets.only(left: 3),
+                        child: isAudioBusy
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : IconButton(
+                                onPressed: onAudio,
+                                tooltip: '播放 Merriam-Webster 发音',
+                                visualDensity: VisualDensity.compact,
+                                constraints: const BoxConstraints.tightFor(
+                                  width: 32,
+                                  height: 32,
+                                ),
+                                padding: EdgeInsets.zero,
+                                icon: const Icon(
+                                  Icons.volume_up_outlined,
+                                  size: 18,
+                                ),
+                              ),
                       ),
                   ],
                 ),
