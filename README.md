@@ -8,9 +8,11 @@ target; the codebase keeps room for other Flutter platforms later.
 
 ## Status
 
-The repository currently contains a lightweight, dependency-minimal Flutter
-shell and the first dashboard design. Real persistence, sync, accounts, and AI
-providers will be added incrementally.
+The repository contains a complete four-screen Flutter prototype backed by a
+local Drift/SQLite data layer. Vocabulary, sentence patterns, review events,
+inbox items, search, favorites, and dashboard counts are persisted locally.
+WebDAV sync, secure credential storage, and real AI providers are the next
+implementation slices.
 
 ## Principles
 
@@ -24,6 +26,7 @@ providers will be added incrementally.
 
 ```bash
 flutter pub get
+dart run build_runner build
 flutter run
 ```
 

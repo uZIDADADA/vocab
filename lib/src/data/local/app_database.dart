@@ -1,0 +1,518 @@
+import 'package:drift/drift.dart';
+
+import 'database_connection.dart';
+
+part 'app_database.g.dart';
+
+class VocabularyEntries extends Table {
+  TextColumn get id => text()();
+
+  TextColumn get term => text().withLength(min: 1, max: 240)();
+
+  TextColumn get definition => text()();
+
+  TextColumn get partOfSpeech => text().nullable()();
+
+  TextColumn get source => text().withDefault(const Constant('手动添加'))();
+
+  TextColumn get sourceContext => text().nullable()();
+
+  TextColumn get tag => text().withDefault(const Constant('未分类'))();
+
+  IntColumn get mastery => integer().withDefault(const Constant(0))();
+
+  BoolColumn get isFavorite => boolean().withDefault(const Constant(false))();
+
+  DateTimeColumn get reviewDueAt => dateTime().nullable()();
+
+  IntColumn get syncRevision => integer().withDefault(const Constant(0))();
+
+  BoolColumn get isDirty => boolean().withDefault(const Constant(true))();
+
+  DateTimeColumn get createdAt => dateTime()();
+
+  DateTimeColumn get updatedAt => dateTime()();
+
+  DateTimeColumn get deletedAt => dateTime().nullable()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
+class SentencePatterns extends Table {
+  TextColumn get id => text()();
+
+  TextColumn get pattern => text().withLength(min: 1, max: 800)();
+
+  TextColumn get meaning => text()();
+
+  TextColumn get category => text().withDefault(const Constant('日常表达'))();
+
+  TextColumn get example => text().nullable()();
+
+  IntColumn get mastery => integer().withDefault(const Constant(0))();
+
+  BoolColumn get isFavorite => boolean().withDefault(const Constant(false))();
+
+  DateTimeColumn get reviewDueAt => dateTime().nullable()();
+
+  IntColumn get syncRevision => integer().withDefault(const Constant(0))();
+
+  BoolColumn get isDirty => boolean().withDefault(const Constant(true))();
+
+  DateTimeColumn get createdAt => dateTime()();
+
+  DateTimeColumn get updatedAt => dateTime()();
+
+  DateTimeColumn get deletedAt => dateTime().nullable()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
+class ReviewEvents extends Table {
+  TextColumn get id => text()();
+
+  TextColumn get itemType => text()();
+
+  TextColumn get itemId => text()();
+
+  IntColumn get rating => integer()();
+
+  IntColumn get durationMs => integer().withDefault(const Constant(0))();
+
+  DateTimeColumn get reviewedAt => dateTime()();
+
+  IntColumn get syncRevision => integer().withDefault(const Constant(0))();
+
+  BoolColumn get isDirty => boolean().withDefault(const Constant(true))();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
+class InboxEntries extends Table {
+  TextColumn get id => text()();
+
+  TextColumn get kind => text()();
+
+  TextColumn get content => text()();
+
+  TextColumn get source => text().withDefault(const Constant('手动添加'))();
+
+  BoolColumn get isProcessed => boolean().withDefault(const Constant(false))();
+
+  DateTimeColumn get createdAt => dateTime()();
+
+  DateTimeColumn get updatedAt => dateTime()();
+
+  IntColumn get syncRevision => integer().withDefault(const Constant(0))();
+
+  BoolColumn get isDirty => boolean().withDefault(const Constant(true))();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
+class AppSettings extends Table {
+  TextColumn get key => text()();
+
+  TextColumn get value => text()();
+
+  DateTimeColumn get updatedAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {key};
+}
+
+class DatabaseStats {
+  const DatabaseStats({
+    required this.wordCount,
+    required this.patternCount,
+    required this.dueWordCount,
+    required this.duePatternCount,
+    required this.inboxCount,
+    required this.reviewCount,
+  });
+
+  final int wordCount;
+  final int patternCount;
+  final int dueWordCount;
+  final int duePatternCount;
+  final int inboxCount;
+  final int reviewCount;
+
+  int get dueCount => dueWordCount + duePatternCount;
+}
+
+@DriftDatabase(
+  tables: [
+    VocabularyEntries,
+    SentencePatterns,
+    ReviewEvents,
+    InboxEntries,
+    AppSettings,
+  ],
+)
+class AppDatabase extends _$AppDatabase {
+  AppDatabase() : super(openDatabaseConnection());
+
+  AppDatabase.forTesting(super.executor);
+
+  @override
+  int get schemaVersion => 1;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+    onCreate: (migrator) async {
+      await migrator.createAll();
+      await _createIndexes();
+    },
+    onUpgrade: (migrator, from, to) async {
+      // Future schema versions add their explicit migrations here.
+    },
+    beforeOpen: (details) async {
+      await customStatement('PRAGMA foreign_keys = ON');
+      await customStatement('PRAGMA journal_mode = WAL');
+      if (details.wasCreated) {
+        await seedDemoData();
+      }
+    },
+  );
+
+  Future<void> _createIndexes() async {
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS vocabulary_term_idx '
+      'ON vocabulary_entries(term COLLATE NOCASE)',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS vocabulary_due_idx '
+      'ON vocabulary_entries(review_due_at) WHERE deleted_at IS NULL',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS pattern_due_idx '
+      'ON sentence_patterns(review_due_at) WHERE deleted_at IS NULL',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS review_item_idx '
+      'ON review_events(item_type, item_id, reviewed_at)',
+    );
+  }
+
+  Stream<List<VocabularyEntry>> watchVocabulary({String query = ''}) {
+    final normalized = query.trim();
+    final statement = select(vocabularyEntries)
+      ..where((row) {
+        final active = row.deletedAt.isNull();
+        if (normalized.isEmpty) return active;
+        final match = '%${_escapeLike(normalized)}%';
+        return active &
+            (row.term.like(match, escapeChar: r'\') |
+                row.definition.like(match, escapeChar: r'\') |
+                row.tag.like(match, escapeChar: r'\'));
+      })
+      ..orderBy([
+        (row) => OrderingTerm.desc(row.isFavorite),
+        (row) => OrderingTerm.desc(row.updatedAt),
+      ]);
+    return statement.watch();
+  }
+
+  Stream<List<SentencePattern>> watchSentencePatterns({String query = ''}) {
+    final normalized = query.trim();
+    final statement = select(sentencePatterns)
+      ..where((row) {
+        final active = row.deletedAt.isNull();
+        if (normalized.isEmpty) return active;
+        final match = '%${_escapeLike(normalized)}%';
+        return active &
+            (row.pattern.like(match, escapeChar: r'\') |
+                row.meaning.like(match, escapeChar: r'\') |
+                row.category.like(match, escapeChar: r'\'));
+      })
+      ..orderBy([
+        (row) => OrderingTerm.desc(row.isFavorite),
+        (row) => OrderingTerm.desc(row.updatedAt),
+      ]);
+    return statement.watch();
+  }
+
+  Stream<DatabaseStats> watchStats() {
+    return customSelect(
+      '''
+      SELECT
+        (SELECT COUNT(*) FROM vocabulary_entries WHERE deleted_at IS NULL) AS word_count,
+        (SELECT COUNT(*) FROM sentence_patterns WHERE deleted_at IS NULL) AS pattern_count,
+        (SELECT COUNT(*) FROM vocabulary_entries
+          WHERE deleted_at IS NULL
+          AND (review_due_at IS NULL OR review_due_at <= CAST(strftime('%s', 'now') AS INTEGER))) AS due_word_count,
+        (SELECT COUNT(*) FROM sentence_patterns
+          WHERE deleted_at IS NULL
+          AND (review_due_at IS NULL OR review_due_at <= CAST(strftime('%s', 'now') AS INTEGER))) AS due_pattern_count,
+        (SELECT COUNT(*) FROM inbox_entries WHERE is_processed = 0) AS inbox_count,
+        (SELECT COUNT(*) FROM review_events) AS review_count
+      ''',
+      readsFrom: {
+        vocabularyEntries,
+        sentencePatterns,
+        inboxEntries,
+        reviewEvents,
+      },
+    ).watchSingle().map(
+      (row) => DatabaseStats(
+        wordCount: row.read<int>('word_count'),
+        patternCount: row.read<int>('pattern_count'),
+        dueWordCount: row.read<int>('due_word_count'),
+        duePatternCount: row.read<int>('due_pattern_count'),
+        inboxCount: row.read<int>('inbox_count'),
+        reviewCount: row.read<int>('review_count'),
+      ),
+    );
+  }
+
+  Future<void> addVocabulary({
+    required String id,
+    required String term,
+    required String definition,
+    String? partOfSpeech,
+    String tag = '手动添加',
+    String source = '手动添加',
+  }) async {
+    final now = DateTime.now();
+    await into(vocabularyEntries).insert(
+      VocabularyEntriesCompanion.insert(
+        id: id,
+        term: term.trim(),
+        definition: definition.trim(),
+        partOfSpeech: Value(_emptyToNull(partOfSpeech)),
+        tag: Value(tag),
+        source: Value(source),
+        reviewDueAt: Value(now),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+  }
+
+  Future<void> addSentencePattern({
+    required String id,
+    required String pattern,
+    required String meaning,
+    String category = '日常表达',
+    String? example,
+  }) async {
+    final now = DateTime.now();
+    await into(sentencePatterns).insert(
+      SentencePatternsCompanion.insert(
+        id: id,
+        pattern: pattern.trim(),
+        meaning: meaning.trim(),
+        category: Value(category),
+        example: Value(_emptyToNull(example)),
+        reviewDueAt: Value(now),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+  }
+
+  Future<void> setVocabularyFavorite(String id, bool favorite) async {
+    await (update(vocabularyEntries)..where((row) => row.id.equals(id))).write(
+      VocabularyEntriesCompanion(
+        isFavorite: Value(favorite),
+        isDirty: const Value(true),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
+  Future<void> setPatternFavorite(String id, bool favorite) async {
+    await (update(sentencePatterns)..where((row) => row.id.equals(id))).write(
+      SentencePatternsCompanion(
+        isFavorite: Value(favorite),
+        isDirty: const Value(true),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
+  Future<void> softDeleteVocabulary(String id) async {
+    final now = DateTime.now();
+    await (update(vocabularyEntries)..where((row) => row.id.equals(id))).write(
+      VocabularyEntriesCompanion(
+        deletedAt: Value(now),
+        isDirty: const Value(true),
+        updatedAt: Value(now),
+      ),
+    );
+  }
+
+  Future<void> softDeletePattern(String id) async {
+    final now = DateTime.now();
+    await (update(sentencePatterns)..where((row) => row.id.equals(id))).write(
+      SentencePatternsCompanion(
+        deletedAt: Value(now),
+        isDirty: const Value(true),
+        updatedAt: Value(now),
+      ),
+    );
+  }
+
+  Future<void> recordReview({
+    required String id,
+    required String itemType,
+    required String itemId,
+    required int rating,
+    int durationMs = 0,
+  }) async {
+    assert(rating >= 1 && rating <= 4, 'rating must be between 1 and 4');
+    final now = DateTime.now();
+    final nextDue = now.add(
+      Duration(
+        days: switch (rating) {
+          1 => 0,
+          2 => 1,
+          3 => 3,
+          _ => 7,
+        },
+      ),
+    );
+
+    await transaction(() async {
+      await into(reviewEvents).insert(
+        ReviewEventsCompanion.insert(
+          id: id,
+          itemType: itemType,
+          itemId: itemId,
+          rating: rating,
+          durationMs: Value(durationMs),
+          reviewedAt: now,
+        ),
+      );
+
+      if (itemType == 'word') {
+        await (update(
+          vocabularyEntries,
+        )..where((row) => row.id.equals(itemId))).write(
+          VocabularyEntriesCompanion(
+            mastery: Value((rating + 1).clamp(1, 5)),
+            reviewDueAt: Value(nextDue),
+            isDirty: const Value(true),
+            updatedAt: Value(now),
+          ),
+        );
+      } else if (itemType == 'pattern') {
+        await (update(
+          sentencePatterns,
+        )..where((row) => row.id.equals(itemId))).write(
+          SentencePatternsCompanion(
+            mastery: Value((rating + 1).clamp(1, 5)),
+            reviewDueAt: Value(nextDue),
+            isDirty: const Value(true),
+            updatedAt: Value(now),
+          ),
+        );
+      }
+    });
+  }
+
+  Future<void> seedDemoData() async {
+    final now = DateTime.now();
+    await batch((batch) {
+      batch.insertAll(vocabularyEntries, [
+        VocabularyEntriesCompanion.insert(
+          id: 'demo-word-serendipity',
+          term: 'serendipity',
+          definition: '意外发现美好事物的能力',
+          partOfSpeech: const Value('n.'),
+          source: const Value('KISS WebDAV'),
+          tag: const Value('网页收藏'),
+          mastery: const Value(3),
+          reviewDueAt: Value(now),
+          createdAt: now,
+          updatedAt: now,
+        ),
+        VocabularyEntriesCompanion.insert(
+          id: 'demo-word-nuance',
+          term: 'nuance',
+          definition: '细微差别；微妙之处',
+          partOfSpeech: const Value('n.'),
+          tag: const Value('写作表达'),
+          mastery: const Value(4),
+          reviewDueAt: Value(now.add(const Duration(days: 2))),
+          createdAt: now,
+          updatedAt: now.subtract(const Duration(minutes: 1)),
+        ),
+        VocabularyEntriesCompanion.insert(
+          id: 'demo-word-spontaneous',
+          term: 'spontaneous',
+          definition: '自发的；自然流露的',
+          partOfSpeech: const Value('adj.'),
+          source: const Value('AI 对练'),
+          tag: const Value('AI 对练'),
+          mastery: const Value(2),
+          reviewDueAt: Value(now),
+          createdAt: now,
+          updatedAt: now.subtract(const Duration(minutes: 2)),
+        ),
+      ]);
+
+      batch.insertAll(sentencePatterns, [
+        SentencePatternsCompanion.insert(
+          id: 'demo-pattern-useful',
+          pattern: 'What I find most useful is …',
+          meaning: '我觉得最有用的是……',
+          category: const Value('表达观点'),
+          mastery: const Value(2),
+          reviewDueAt: Value(now),
+          createdAt: now,
+          updatedAt: now,
+        ),
+        SentencePatternsCompanion.insert(
+          id: 'demo-pattern-realize',
+          pattern: 'I used to think … but now I realize …',
+          meaning: '我过去认为……但现在我意识到……',
+          category: const Value('个人成长'),
+          mastery: const Value(3),
+          reviewDueAt: Value(now.add(const Duration(days: 1))),
+          createdAt: now,
+          updatedAt: now.subtract(const Duration(minutes: 1)),
+        ),
+        SentencePatternsCompanion.insert(
+          id: 'demo-pattern-choose',
+          pattern: 'If I had to choose, I would …',
+          meaning: '如果一定要选，我会……',
+          category: const Value('做出选择'),
+          mastery: const Value(4),
+          reviewDueAt: Value(now.add(const Duration(days: 3))),
+          createdAt: now,
+          updatedAt: now.subtract(const Duration(minutes: 2)),
+        ),
+      ]);
+
+      batch.insertAll(inboxEntries, [
+        for (var index = 0; index < 3; index++)
+          InboxEntriesCompanion.insert(
+            id: 'demo-inbox-$index',
+            kind: index == 0 ? 'word' : 'pattern',
+            content: '待整理示例 ${index + 1}',
+            source: Value(index == 0 ? 'KISS WebDAV' : 'AI 收藏'),
+            createdAt: now.subtract(Duration(minutes: index)),
+            updatedAt: now.subtract(Duration(minutes: index)),
+          ),
+      ]);
+    });
+  }
+}
+
+String _escapeLike(String value) {
+  return value
+      .replaceAll(r'\', r'\\')
+      .replaceAll('%', r'\%')
+      .replaceAll('_', r'\_');
+}
+
+String? _emptyToNull(String? value) {
+  final normalized = value?.trim();
+  return normalized == null || normalized.isEmpty ? null : normalized;
+}
