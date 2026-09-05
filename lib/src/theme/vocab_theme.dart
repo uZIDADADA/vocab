@@ -97,13 +97,8 @@ abstract final class VocabTheme {
       ),
       navigationBarTheme: const NavigationBarThemeData(
         backgroundColor: VocabColors.surface,
-        indicatorColor: VocabColors.lime,
         elevation: 0,
         height: 72,
-        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-        labelTextStyle: WidgetStatePropertyAll(
-          TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
-        ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,

@@ -6,8 +6,10 @@ import '../../data/repositories/kiss_worker_settings_repository.dart';
 import '../../data/repositories/learning_repository.dart';
 import '../../data/repositories/pronunciation_settings_repository.dart';
 import '../../infrastructure/ai/ai_chat_provider.dart';
+import '../../infrastructure/dictionary/dictionary_service.dart';
 import '../../infrastructure/pronunciation/pronunciation_service.dart';
 import '../../infrastructure/sync/kiss_worker_vocabulary_service.dart';
+import '../../theme/vocab_theme.dart';
 import '../coach/coach_view.dart';
 import '../inbox/inbox_page.dart';
 import '../library/library_view.dart';
@@ -19,6 +21,7 @@ class HomeScreen extends StatefulWidget {
     required this.repository,
     required this.aiSettingsRepository,
     required this.aiChatProvider,
+    required this.dictionaryService,
     required this.conversationRepository,
     required this.pronunciationSettingsRepository,
     required this.pronunciationService,
@@ -30,6 +33,7 @@ class HomeScreen extends StatefulWidget {
   final LearningRepository repository;
   final AiSettingsRepository aiSettingsRepository;
   final AiChatProvider aiChatProvider;
+  final DictionaryService dictionaryService;
   final ConversationRepository conversationRepository;
   final PronunciationSettingsRepository pronunciationSettingsRepository;
   final PronunciationService pronunciationService;
@@ -67,25 +71,25 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  static const _destinations = <NavigationDestination>[
-    NavigationDestination(
-      icon: Icon(Icons.home_outlined),
-      selectedIcon: Icon(Icons.home_rounded),
+  static const _destinations = <_HomeDestination>[
+    _HomeDestination(
+      icon: Icons.home_outlined,
+      selectedIcon: Icons.home_rounded,
       label: '今日',
     ),
-    NavigationDestination(
-      icon: Icon(Icons.menu_book_outlined),
-      selectedIcon: Icon(Icons.menu_book_rounded),
+    _HomeDestination(
+      icon: Icons.menu_book_outlined,
+      selectedIcon: Icons.menu_book_rounded,
       label: '词句',
     ),
-    NavigationDestination(
-      icon: Icon(Icons.chat_bubble_outline_rounded),
-      selectedIcon: Icon(Icons.chat_bubble_rounded),
+    _HomeDestination(
+      icon: Icons.chat_bubble_outline_rounded,
+      selectedIcon: Icons.chat_bubble_rounded,
       label: '对练',
     ),
-    NavigationDestination(
-      icon: Icon(Icons.person_outline_rounded),
-      selectedIcon: Icon(Icons.person_rounded),
+    _HomeDestination(
+      icon: Icons.person_outline_rounded,
+      selectedIcon: Icons.person_rounded,
       label: '我的',
     ),
   ];
@@ -100,6 +104,7 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             TodayView(
               repository: widget.repository,
+              dictionaryService: widget.dictionaryService,
               pronunciationService: widget.pronunciationService,
               onOpenCoach: () => _selectTab(2),
               onOpenInbox: _openInbox,
@@ -137,10 +142,133 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
-      bottomNavigationBar: NavigationBar(
+      bottomNavigationBar: _VocabNavigationBar(
         selectedIndex: _tabIndex,
         destinations: _destinations,
         onDestinationSelected: _selectTab,
+      ),
+    );
+  }
+}
+
+class _HomeDestination {
+  const _HomeDestination({
+    required this.icon,
+    required this.selectedIcon,
+    required this.label,
+  });
+
+  final IconData icon;
+  final IconData selectedIcon;
+  final String label;
+}
+
+class _VocabNavigationBar extends StatelessWidget {
+  const _VocabNavigationBar({
+    required this.selectedIndex,
+    required this.destinations,
+    required this.onDestinationSelected,
+  });
+
+  final int selectedIndex;
+  final List<_HomeDestination> destinations;
+  final ValueChanged<int> onDestinationSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final navigationTheme = theme.navigationBarTheme;
+
+    return ColoredBox(
+      color: navigationTheme.backgroundColor ?? theme.colorScheme.surface,
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: navigationTheme.height ?? 72,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            child: Row(
+              children: [
+                for (var index = 0; index < destinations.length; index++)
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: _NavigationDestinationButton(
+                        index: index,
+                        destination: destinations[index],
+                        selected: selectedIndex == index,
+                        onTap: () => onDestinationSelected(index),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NavigationDestinationButton extends StatelessWidget {
+  const _NavigationDestinationButton({
+    required this.index,
+    required this.destination,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final int index;
+  final _HomeDestination destination;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      selected: selected,
+      button: true,
+      label: destination.label,
+      excludeSemantics: true,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(20),
+          child: AnimatedContainer(
+            key: Key('bottom-navigation-item-$index'),
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            decoration: BoxDecoration(
+              color: selected ? VocabColors.lime : Colors.transparent,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  selected ? destination.selectedIcon : destination.icon,
+                  size: 24,
+                  color: selected ? VocabColors.ink : VocabColors.muted,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  destination.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.fade,
+                  softWrap: false,
+                  style: TextStyle(
+                    color: selected ? VocabColors.ink : VocabColors.muted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    height: 1.1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

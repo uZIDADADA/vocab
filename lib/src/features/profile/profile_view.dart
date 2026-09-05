@@ -823,6 +823,13 @@ class _MoreSettingsCard extends StatelessWidget {
           ),
           Divider(height: 1, indent: 54),
           _SettingRow(
+            icon: Icons.menu_book_outlined,
+            label: '离线词典',
+            value: 'WordNet 2025',
+            onTap: () => _showDictionaryLicense(context),
+          ),
+          Divider(height: 1, indent: 54),
+          _SettingRow(
             icon: Icons.shield_outlined,
             label: '加密与恢复',
             value: '本机解密',
@@ -832,6 +839,29 @@ class _MoreSettingsCard extends StatelessWidget {
       ),
     );
   }
+}
+
+void _showDictionaryLicense(BuildContext context) {
+  showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('离线词典来源'),
+      content: const SingleChildScrollView(
+        child: Text(
+          '英文释义来自 Open English WordNet 2025（v2.3.2），'
+          '以 Creative Commons Attribution 4.0 International（CC BY 4.0）'
+          '许可发布。\n\n词典数据库保存在本机，查询无需网络或 API Key。'
+          'Open English WordNet 项目：https://en-word.net/',
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('知道了'),
+        ),
+      ],
+    ),
+  );
 }
 
 void _showPrivacy(BuildContext context) {

@@ -129,6 +129,7 @@ class LearningRepository {
     String tag = '手动添加',
     String source = '手动添加',
     String? sourceContext,
+    bool isFavorite = false,
   }) {
     return _database.addVocabulary(
       id: _newId('word'),
@@ -138,6 +139,34 @@ class LearningRepository {
       tag: tag,
       source: source,
       sourceContext: sourceContext,
+      isFavorite: isFavorite,
+    );
+  }
+
+  Future<void> favoriteDictionaryWord({
+    required String term,
+    required String definition,
+    required String partOfSpeech,
+    required String source,
+    String? example,
+  }) async {
+    final words = await watchWords(query: term).first;
+    for (final word in words) {
+      if (word.term.trim().toLowerCase() == term.trim().toLowerCase()) {
+        if (!word.isFavorite) {
+          await _database.setVocabularyFavorite(word.id, true);
+        }
+        return;
+      }
+    }
+    await addWord(
+      term: term,
+      definition: definition,
+      partOfSpeech: partOfSpeech,
+      tag: '词典收藏',
+      source: source,
+      sourceContext: example == null ? null : jsonEncode({'example': example}),
+      isFavorite: true,
     );
   }
 

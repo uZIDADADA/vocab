@@ -44,21 +44,30 @@ class CoachLearningSuggestion {
   final String? example;
 }
 
-enum AiProviderKind { gemini, openAiCompatible }
+enum AiProviderKind { gemini, deepSeek, bigModel, kimi, openAiCompatible }
 
 extension AiProviderKindDetails on AiProviderKind {
   String get storageValue => switch (this) {
     AiProviderKind.gemini => 'gemini',
+    AiProviderKind.deepSeek => 'deepseek',
+    AiProviderKind.bigModel => 'bigmodel',
+    AiProviderKind.kimi => 'kimi',
     AiProviderKind.openAiCompatible => 'openai-compatible',
   };
 
   String get label => switch (this) {
     AiProviderKind.gemini => 'Gemini',
+    AiProviderKind.deepSeek => 'DeepSeek',
+    AiProviderKind.bigModel => '智谱 BigModel',
+    AiProviderKind.kimi => 'Kimi',
     AiProviderKind.openAiCompatible => 'OpenAI Compatible',
   };
 
   static AiProviderKind fromStorage(String? value) {
     return switch (value) {
+      'deepseek' => AiProviderKind.deepSeek,
+      'bigmodel' => AiProviderKind.bigModel,
+      'kimi' => AiProviderKind.kimi,
       'openai-compatible' => AiProviderKind.openAiCompatible,
       _ => AiProviderKind.gemini,
     };
@@ -76,6 +85,35 @@ class AiProviderConfig {
     : kind = AiProviderKind.gemini,
       baseUrl = 'https://generativelanguage.googleapis.com/v1beta/openai',
       model = 'gemini-3.1-flash-lite';
+
+  const AiProviderConfig.deepSeek()
+    : kind = AiProviderKind.deepSeek,
+      baseUrl = 'https://api.deepseek.com',
+      model = 'deepseek-v4-flash';
+
+  const AiProviderConfig.bigModel()
+    : kind = AiProviderKind.bigModel,
+      baseUrl = 'https://open.bigmodel.cn/api/paas/v4',
+      model = 'glm-5.2';
+
+  const AiProviderConfig.kimi()
+    : kind = AiProviderKind.kimi,
+      baseUrl = 'https://api.moonshot.cn/v1',
+      model = 'kimi-k2.6';
+
+  const AiProviderConfig.openAiCompatible()
+    : kind = AiProviderKind.openAiCompatible,
+      baseUrl = 'https://api.openai.com/v1',
+      model = '';
+
+  static AiProviderConfig preset(AiProviderKind kind) => switch (kind) {
+    AiProviderKind.gemini => const AiProviderConfig.gemini(),
+    AiProviderKind.deepSeek => const AiProviderConfig.deepSeek(),
+    AiProviderKind.bigModel => const AiProviderConfig.bigModel(),
+    AiProviderKind.kimi => const AiProviderConfig.kimi(),
+    AiProviderKind.openAiCompatible =>
+      const AiProviderConfig.openAiCompatible(),
+  };
 
   final AiProviderKind kind;
   final String baseUrl;

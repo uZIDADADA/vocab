@@ -785,14 +785,10 @@ class _AiSettingsSheetState extends State<_AiSettingsSheet> {
     if (value == null || value == _kind) return;
     setState(() {
       _kind = value;
-      if (value == AiProviderKind.gemini) {
-        const defaults = AiProviderConfig.gemini();
-        _baseUrlController.text = defaults.baseUrl;
-        _modelController.text = defaults.model;
-      } else {
-        _baseUrlController.text = 'https://api.openai.com/v1';
-        _modelController.clear();
-      }
+      final defaults = AiProviderConfig.preset(value);
+      _baseUrlController.text = defaults.baseUrl;
+      _modelController.text = defaults.model;
+      _apiKeyController.clear();
     });
   }
 
@@ -816,6 +812,7 @@ class _AiSettingsSheetState extends State<_AiSettingsSheet> {
   @override
   Widget build(BuildContext context) {
     final hasSavedKey = widget.controller.settings.apiKey?.isNotEmpty == true;
+    final providerChanged = _kind != widget.controller.settings.config.kind;
     return Padding(
       padding: EdgeInsets.fromLTRB(
         20,
@@ -842,7 +839,7 @@ class _AiSettingsSheetState extends State<_AiSettingsSheet> {
             Text('AI 服务设置', style: Theme.of(context).textTheme.headlineSmall),
             const SizedBox(height: 5),
             const Text(
-              '首版使用 OpenAI 兼容协议。Gemini 和多数兼容模型可以共用同一套聊天实现。',
+              'Gemini、DeepSeek、智谱 BigModel 和 Kimi 均使用兼容接口；也可以填写其他 OpenAI 兼容服务。',
               style: TextStyle(color: VocabColors.muted),
             ),
             const SizedBox(height: 18),
@@ -875,7 +872,7 @@ class _AiSettingsSheetState extends State<_AiSettingsSheet> {
               autocorrect: false,
               decoration: const InputDecoration(
                 labelText: '模型名称',
-                hintText: 'gemini-3.1-flash-lite',
+                hintText: '输入服务商提供的模型 ID',
               ),
             ),
             const SizedBox(height: 12),
@@ -887,7 +884,11 @@ class _AiSettingsSheetState extends State<_AiSettingsSheet> {
               enableSuggestions: false,
               decoration: InputDecoration(
                 labelText: 'API Key',
-                hintText: hasSavedKey ? '已保存；留空表示不修改' : '首次配置必须填写',
+                hintText: providerChanged
+                    ? '切换提供商必须填写对应的 Key'
+                    : hasSavedKey
+                    ? '已保存；留空表示不修改'
+                    : '首次配置必须填写',
                 suffixIcon: IconButton(
                   onPressed: () => setState(() => _obscureKey = !_obscureKey),
                   icon: Icon(

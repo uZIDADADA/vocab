@@ -31,15 +31,29 @@ dart run build_runner build
 flutter run
 ```
 
+## Android release APKs
+
+Build ABI-specific release APKs with the project script:
+
+```bash
+./tool/build_android_release_apks.sh
+```
+
+It produces separate `armeabi-v7a`, `arm64-v8a`, and `x86_64` APKs under
+`build/app/outputs/flutter-apk/` and removes any stale universal release APK
+from that directory. Use an Android App Bundle instead when publishing through
+Google Play so Play can deliver the device-specific APK automatically.
+
 See [docs/architecture.md](docs/architecture.md) for the planned system design.
 Logo explorations live in [docs/design/logo-candidates](docs/design/logo-candidates).
 
 ## AI text coach
 
-The text coach currently supports Gemini and custom OpenAI-compatible chat
-endpoints. Open **对练 → AI 设置**, choose a provider, then enter its Base URL,
-model name, and API key. The Gemini preset uses
-`gemini-3.1-flash-lite` and Google's OpenAI-compatible endpoint by default.
+The text coach includes presets for Gemini, DeepSeek, Zhipu BigModel, and Kimi,
+and also supports custom OpenAI-compatible chat endpoints. Open **对练 → AI
+设置**, choose a provider, then enter its Base URL, model name, and API key.
+Provider presets fill the official endpoint and a current default model while
+keeping both fields editable.
 
 The API key is stored with the platform secure-storage service; non-secret
 provider metadata is stored in SQLite. Conversations and messages are stored in

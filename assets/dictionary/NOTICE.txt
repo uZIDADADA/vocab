@@ -1,0 +1,10 @@
+Open English WordNet 2025 (v2.3.2)
+https://en-word.net/
+
+The dictionary data is licensed under the Creative Commons Attribution 4.0
+International License (CC BY 4.0):
+https://creativecommons.org/licenses/by/4.0/
+
+The optimized SQLite representation was distributed with Lexicor 0.2.0.
+Lexicor is Copyright (c) 2025 Puntbyte and licensed under the MIT License.
+https://github.com/puntbyte/lexicor

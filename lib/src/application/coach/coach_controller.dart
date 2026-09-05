@@ -89,6 +89,12 @@ class CoachController extends ChangeNotifier {
       notifyListeners();
       return false;
     }
+    if (config.kind != _settings.config.kind &&
+        replacementApiKey?.trim().isEmpty != false) {
+      _errorMessage = '切换 AI 服务提供商时，请填写对应的 API Key。';
+      notifyListeners();
+      return false;
+    }
     if (!_settings.isConfigured && replacementApiKey?.trim().isEmpty != false) {
       _errorMessage = '首次配置需要填写 API Key。';
       notifyListeners();
@@ -115,7 +121,7 @@ class CoachController extends ChangeNotifier {
     final normalized = text.trim();
     if (normalized.isEmpty || _isSending) return false;
     if (!_settings.isConfigured) {
-      _errorMessage = '请先配置 Gemini API Key。';
+      _errorMessage = '请先配置 AI 服务和 API Key。';
       notifyListeners();
       return false;
     }

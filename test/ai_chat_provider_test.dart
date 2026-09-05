@@ -74,4 +74,36 @@ void main() {
       ),
     );
   });
+
+  test('uses Kimi-compatible request parameters', () async {
+    final client = MockClient((request) async {
+      expect(
+        request.url.toString(),
+        'https://api.moonshot.cn/v1/chat/completions',
+      );
+      final body = jsonDecode(request.body) as Map<String, Object?>;
+      expect(body['model'], 'kimi-k2.6');
+      expect(body, isNot(contains('temperature')));
+      expect(body['thinking'], {'type': 'disabled'});
+      return http.Response(
+        jsonEncode({
+          'choices': [
+            {
+              'message': {'role': 'assistant', 'content': 'Hello from Kimi!'},
+            },
+          ],
+        }),
+        200,
+      );
+    });
+    final provider = OpenAiCompatibleChatProvider(client: client);
+
+    final reply = await provider.complete(
+      config: const AiProviderConfig.kimi(),
+      apiKey: 'test-key',
+      messages: const [CoachMessage(role: CoachRole.user, text: 'Hello')],
+    );
+
+    expect(reply, 'Hello from Kimi!');
+  });
 }

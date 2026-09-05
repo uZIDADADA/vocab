@@ -8,6 +8,7 @@ import 'data/repositories/learning_repository.dart';
 import 'data/repositories/pronunciation_settings_repository.dart';
 import 'features/home/home_screen.dart';
 import 'infrastructure/ai/ai_chat_provider.dart';
+import 'infrastructure/dictionary/dictionary_service.dart';
 import 'infrastructure/pronunciation/pronunciation_service.dart';
 import 'infrastructure/sync/kiss_worker_vocabulary_service.dart';
 import 'theme/vocab_theme.dart';
@@ -17,6 +18,7 @@ class VocabApp extends StatefulWidget {
     this.database,
     this.aiSecretStore,
     this.aiChatProvider,
+    this.dictionaryService,
     this.pronunciationService,
     this.kissVocabularyService,
     super.key,
@@ -25,6 +27,7 @@ class VocabApp extends StatefulWidget {
   final AppDatabase? database;
   final AiSecretStore? aiSecretStore;
   final AiChatProvider? aiChatProvider;
+  final DictionaryService? dictionaryService;
   final PronunciationService? pronunciationService;
   final KissVocabularyService? kissVocabularyService;
 
@@ -51,6 +54,9 @@ class _VocabAppState extends State<VocabApp> {
   late final bool _ownsAiChatProvider = widget.aiChatProvider == null;
   late final AiChatProvider _aiChatProvider =
       widget.aiChatProvider ?? OpenAiCompatibleChatProvider();
+  late final bool _ownsDictionaryService = widget.dictionaryService == null;
+  late final DictionaryService _dictionaryService =
+      widget.dictionaryService ?? WordNetDictionaryService();
   late final bool _ownsPronunciationService =
       widget.pronunciationService == null;
   late final PronunciationService _pronunciationService =
@@ -70,6 +76,9 @@ class _VocabAppState extends State<VocabApp> {
     }
     if (_ownsPronunciationService) {
       _pronunciationService.dispose();
+    }
+    if (_ownsDictionaryService) {
+      _dictionaryService.close();
     }
     if (_ownsKissVocabularyService) {
       _kissVocabularyService.close();
@@ -91,6 +100,7 @@ class _VocabAppState extends State<VocabApp> {
         aiSettingsRepository: _aiSettingsRepository,
         conversationRepository: _conversationRepository,
         aiChatProvider: _aiChatProvider,
+        dictionaryService: _dictionaryService,
         pronunciationSettingsRepository: _pronunciationSettingsRepository,
         pronunciationService: _pronunciationService,
         kissWorkerSettingsRepository: _kissWorkerSettingsRepository,

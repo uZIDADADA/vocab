@@ -78,6 +78,27 @@ void main() {
     expect(await repository.watchWords(query: 'nuance').first, isEmpty);
   });
 
+  test('dictionary favorites are inserted once and stay favorite', () async {
+    await repository.favoriteDictionaryWord(
+      term: 'fortuitous',
+      definition: 'adj. happening by chance',
+      partOfSpeech: 'adj.',
+      source: 'Open English WordNet 2025 · CC BY 4.0',
+      example: 'a fortuitous encounter',
+    );
+    await repository.favoriteDictionaryWord(
+      term: ' FORTUITOUS ',
+      definition: 'duplicate',
+      partOfSpeech: 'adj.',
+      source: 'Open English WordNet 2025 · CC BY 4.0',
+    );
+
+    final words = await repository.watchWords(query: 'fortuitous').first;
+    expect(words, hasLength(1));
+    expect(words.single.isFavorite, isTrue);
+    expect(words.single.source, contains('Open English WordNet'));
+  });
+
   test('records review events and updates statistics', () async {
     final initialStats = await repository.watchStats().first;
     expect(initialStats.wordCount, 3);

@@ -362,6 +362,7 @@ class AppDatabase extends _$AppDatabase {
     String tag = '手动添加',
     String source = '手动添加',
     String? sourceContext,
+    bool isFavorite = false,
   }) async {
     final now = DateTime.now();
     await into(vocabularyEntries).insert(
@@ -373,6 +374,7 @@ class AppDatabase extends _$AppDatabase {
         tag: Value(tag),
         source: Value(source),
         sourceContext: Value(_emptyToNull(sourceContext)),
+        isFavorite: Value(isFavorite),
         reviewDueAt: Value(now),
         createdAt: now,
         updatedAt: now,

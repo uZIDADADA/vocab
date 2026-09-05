@@ -15,8 +15,10 @@ import 'package:vocab/src/data/repositories/ai_settings_repository.dart';
 import 'package:vocab/src/domain/coach_models.dart';
 import 'package:vocab/src/domain/learning_models.dart';
 import 'package:vocab/src/infrastructure/ai/ai_chat_provider.dart';
+import 'package:vocab/src/infrastructure/dictionary/dictionary_service.dart';
 import 'package:vocab/src/infrastructure/pronunciation/pronunciation_service.dart';
 import 'package:vocab/src/infrastructure/sync/kiss_worker_vocabulary_service.dart';
+import 'package:vocab/src/theme/vocab_theme.dart';
 
 void main() {
   setUp(() {
@@ -224,6 +226,7 @@ void main() {
   ) async {
     final database = AppDatabase.forTesting(NativeDatabase.memory());
     final pronunciationService = _FakePronunciationService();
+    final dictionaryService = _FakeDictionaryService();
     await database.customSelect('SELECT 1').get();
 
     await tester.pumpWidget(
@@ -231,6 +234,7 @@ void main() {
         database: database,
         aiSecretStore: MemoryAiSecretStore(),
         aiChatProvider: _FakeAiChatProvider(),
+        dictionaryService: dictionaryService,
         pronunciationService: pronunciationService,
         kissVocabularyService: _FakeKissVocabularyService(),
       ),
@@ -239,6 +243,33 @@ void main() {
 
     expect(find.text('早上好，继续开口'), findsOneWidget);
     expect(find.textContaining('个待复习'), findsWidgets);
+    _expectSelectedNavigationItem(tester, index: 0, label: '今日');
+
+    await tester.enterText(
+      find.byKey(const Key('home-dictionary-search')),
+      'serendipity',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+    expect(dictionaryService.lastTerm, 'serendipity');
+    expect(find.byKey(const Key('home-dictionary-result')), findsOneWidget);
+    expect(
+      find.textContaining(
+        'a fortunate accidental discovery',
+        findRichText: true,
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('无需 API Key'), findsOneWidget);
+    await tester.tap(find.byTooltip('播放单词发音'));
+    await tester.pump();
+    expect(pronunciationService.lastTerm, 'serendipity');
+    await tester.tap(find.byTooltip('收藏'));
+    await _pumpDatabaseFrames(tester);
+    expect(find.byTooltip('取消收藏'), findsOneWidget);
+    await tester.tap(find.byTooltip('清空搜索'));
+    await tester.pump();
+    expect(find.byKey(const Key('home-dictionary-result')), findsNothing);
 
     await tester.tap(find.byTooltip('学习日历'));
     await tester.pumpAndSettle();
@@ -286,10 +317,12 @@ void main() {
     await tester.scrollUntilVisible(
       find.byKey(const Key('metric-total-words')),
       300,
-      scrollable: find.descendant(
-        of: find.byKey(const PageStorageKey<String>('today-scroll')),
-        matching: find.byType(Scrollable),
-      ),
+      scrollable: find
+          .descendant(
+            of: find.byKey(const PageStorageKey<String>('today-scroll')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
     );
     await tester.tap(find.byKey(const Key('metric-total-words')));
     await _pumpDatabaseFrames(tester);
@@ -301,10 +334,12 @@ void main() {
     await tester.scrollUntilVisible(
       find.byKey(const Key('metric-total-patterns')),
       300,
-      scrollable: find.descendant(
-        of: find.byKey(const PageStorageKey<String>('today-scroll')),
-        matching: find.byType(Scrollable),
-      ),
+      scrollable: find
+          .descendant(
+            of: find.byKey(const PageStorageKey<String>('today-scroll')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
     );
     await tester.tap(find.byKey(const Key('metric-total-patterns')));
     await _pumpDatabaseFrames(tester);
@@ -315,10 +350,12 @@ void main() {
     await tester.scrollUntilVisible(
       find.byKey(const Key('metric-review-count')),
       300,
-      scrollable: find.descendant(
-        of: find.byKey(const PageStorageKey<String>('today-scroll')),
-        matching: find.byType(Scrollable),
-      ),
+      scrollable: find
+          .descendant(
+            of: find.byKey(const PageStorageKey<String>('today-scroll')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
     );
     await tester.tap(find.byKey(const Key('metric-review-count')));
     await tester.pumpAndSettle();
@@ -330,10 +367,12 @@ void main() {
     await tester.scrollUntilVisible(
       find.byKey(const Key('home-word-sync')),
       300,
-      scrollable: find.descendant(
-        of: find.byKey(const PageStorageKey<String>('today-scroll')),
-        matching: find.byType(Scrollable),
-      ),
+      scrollable: find
+          .descendant(
+            of: find.byKey(const PageStorageKey<String>('today-scroll')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
     );
     expect(find.text('词汇同步'), findsOneWidget);
     expect(find.text('未配置 · 点击完成 KISS-Worker 设置'), findsOneWidget);
@@ -347,6 +386,7 @@ void main() {
 
     await tester.tap(find.text('词句'));
     await _pumpDatabaseFrames(tester);
+    _expectSelectedNavigationItem(tester, index: 1, label: '词句');
     expect(find.text('我的词句'), findsOneWidget);
     await tester.tap(find.text('单词'));
     await _pumpDatabaseFrames(tester);
@@ -386,6 +426,13 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('AI 服务设置'), findsOneWidget);
     expect(find.text('gemini-3.1-flash-lite'), findsWidgets);
+    await tester.tap(find.text('Gemini').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('DeepSeek').last);
+    await tester.pumpAndSettle();
+    expect(find.text('https://api.deepseek.com'), findsOneWidget);
+    expect(find.text('deepseek-v4-flash'), findsOneWidget);
+    expect(find.text('切换提供商必须填写对应的 Key'), findsOneWidget);
     await tester.enterText(find.byType(TextField).last, 'gemini-test-key');
     await tester.tap(find.text('保存设置'));
     await tester.pumpAndSettle();
@@ -463,6 +510,29 @@ class _FakePronunciationService implements PronunciationService {
   Future<void> dispose() async {}
 }
 
+class _FakeDictionaryService implements DictionaryService {
+  String? lastTerm;
+
+  @override
+  Future<DictionaryEntry?> lookup(String term) async {
+    lastTerm = term;
+    return DictionaryEntry(
+      term: term,
+      source: 'Open English WordNet 2025 · CC BY 4.0',
+      senses: const [
+        DictionarySense(
+          partOfSpeech: 'n.',
+          definition: 'a fortunate accidental discovery',
+          example: 'a fortunate stroke of serendipity',
+        ),
+      ],
+    );
+  }
+
+  @override
+  Future<void> close() async {}
+}
+
 class _FakeKissVocabularyService implements KissVocabularyService {
   int uploadCalls = 0;
   List<ImportedVocabularyCandidate> uploaded = [];
@@ -489,6 +559,20 @@ Future<void> _pumpDatabaseFrames(WidgetTester tester) async {
   for (var index = 0; index < 5; index++) {
     await tester.pump(const Duration(milliseconds: 20));
   }
+}
+
+void _expectSelectedNavigationItem(
+  WidgetTester tester, {
+  required int index,
+  required String label,
+}) {
+  final itemFinder = find.byKey(Key('bottom-navigation-item-$index'));
+  final item = tester.widget<AnimatedContainer>(itemFinder);
+  expect((item.decoration! as BoxDecoration).color, VocabColors.lime);
+  expect(
+    find.descendant(of: itemFinder, matching: find.text(label)),
+    findsOneWidget,
+  );
 }
 
 class _DelayedSecretStore extends MemoryAiSecretStore {

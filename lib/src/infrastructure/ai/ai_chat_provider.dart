@@ -71,7 +71,12 @@ Keep each turn concise and suitable for spoken practice. Never claim to have hea
             body: jsonEncode({
               'model': config.model.trim(),
               'messages': requestMessages,
-              'temperature': systemInstruction == null ? 0.7 : 0.2,
+              if (config.kind != AiProviderKind.kimi)
+                'temperature': systemInstruction == null ? 0.7 : 0.2,
+              if (config.kind == AiProviderKind.deepSeek ||
+                  config.kind == AiProviderKind.bigModel ||
+                  config.kind == AiProviderKind.kimi)
+                'thinking': {'type': 'disabled'},
             }),
           )
           .timeout(const Duration(seconds: 45));

@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../data/repositories/kiss_worker_settings_repository.dart';
 import '../../data/repositories/learning_repository.dart';
 import '../../domain/learning_models.dart';
+import '../../infrastructure/dictionary/dictionary_service.dart';
 import '../../infrastructure/pronunciation/pronunciation_service.dart';
 import '../../theme/vocab_theme.dart';
 import '../../widgets/vocab_ui.dart';
@@ -13,6 +16,7 @@ import '../review/review_session_page.dart';
 class TodayView extends StatelessWidget {
   const TodayView({
     required this.repository,
+    required this.dictionaryService,
     required this.pronunciationService,
     required this.onOpenCoach,
     required this.onOpenInbox,
@@ -24,6 +28,7 @@ class TodayView extends StatelessWidget {
   });
 
   final LearningRepository repository;
+  final DictionaryService dictionaryService;
   final PronunciationService pronunciationService;
   final VoidCallback onOpenCoach;
   final VoidCallback onOpenInbox;
@@ -48,7 +53,13 @@ class TodayView extends StatelessWidget {
               sliver: SliverList.list(
                 children: [
                   _TodayHeader(repository: repository),
-                  const SizedBox(height: 22),
+                  const SizedBox(height: 18),
+                  _DictionarySearch(
+                    repository: repository,
+                    dictionaryService: dictionaryService,
+                    pronunciationService: pronunciationService,
+                  ),
+                  const SizedBox(height: 18),
                   _OverviewCard(stats: stats, repository: repository),
                   const SizedBox(height: 16),
                   _ReviewCard(
@@ -85,6 +96,339 @@ class TodayView extends StatelessWidget {
               ),
             ),
           ],
+        );
+      },
+    );
+  }
+}
+
+class _DictionarySearch extends StatefulWidget {
+  const _DictionarySearch({
+    required this.repository,
+    required this.dictionaryService,
+    required this.pronunciationService,
+  });
+
+  final LearningRepository repository;
+  final DictionaryService dictionaryService;
+  final PronunciationService pronunciationService;
+
+  @override
+  State<_DictionarySearch> createState() => _DictionarySearchState();
+}
+
+class _DictionarySearchState extends State<_DictionarySearch> {
+  final _controller = TextEditingController();
+  Timer? _debounce;
+  DictionaryEntry? _entry;
+  String? _message;
+  bool _isLoading = false;
+  bool _isSpeaking = false;
+  int _requestVersion = 0;
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onChanged(String value) {
+    setState(() {});
+    _debounce?.cancel();
+    if (value.trim().isEmpty) {
+      _clearResult();
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 450), () => _lookup(value));
+  }
+
+  void _clear() {
+    _controller.clear();
+    _clearResult();
+  }
+
+  void _clearResult() {
+    _requestVersion++;
+    if (!mounted) return;
+    setState(() {
+      _entry = null;
+      _message = null;
+      _isLoading = false;
+    });
+  }
+
+  Future<void> _lookup(String rawTerm) async {
+    _debounce?.cancel();
+    final term = rawTerm.trim();
+    if (term.isEmpty) {
+      _clearResult();
+      return;
+    }
+    if (!RegExp(r"^[A-Za-z][A-Za-z '\-]*$").hasMatch(term)) {
+      setState(() {
+        _entry = null;
+        _message = '请输入英文单词或短语';
+        _isLoading = false;
+      });
+      return;
+    }
+
+    final request = ++_requestVersion;
+    setState(() {
+      _entry = null;
+      _message = null;
+      _isLoading = true;
+    });
+    try {
+      final entry = await widget.dictionaryService.lookup(term);
+      if (!mounted || request != _requestVersion) return;
+      setState(() {
+        _entry = entry;
+        _message = entry == null ? '本地词典暂未收录 “$term”' : null;
+        _isLoading = false;
+      });
+    } on Object {
+      if (!mounted || request != _requestVersion) return;
+      setState(() {
+        _entry = null;
+        _message = '离线词典加载失败，请稍后重试';
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _speak() async {
+    final entry = _entry;
+    if (entry == null || _isSpeaking) return;
+    setState(() => _isSpeaking = true);
+    try {
+      await widget.pronunciationService.play(entry.term);
+    } on Object {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('暂时无法播放发音')));
+      }
+    } finally {
+      if (mounted) setState(() => _isSpeaking = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        TextField(
+          key: const Key('home-dictionary-search'),
+          controller: _controller,
+          textInputAction: TextInputAction.search,
+          autocorrect: false,
+          enableSuggestions: false,
+          onChanged: _onChanged,
+          onSubmitted: _lookup,
+          decoration: InputDecoration(
+            hintText: '搜索英文单词',
+            prefixIcon: const Icon(Icons.search_rounded),
+            suffixIcon: _controller.text.isEmpty
+                ? null
+                : IconButton(
+                    onPressed: _clear,
+                    tooltip: '清空搜索',
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(22)),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(22),
+              borderSide: const BorderSide(color: VocabColors.line),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(22),
+              borderSide: const BorderSide(color: VocabColors.ink, width: 1.4),
+            ),
+          ),
+        ),
+        if (_isLoading) ...[
+          const SizedBox(height: 12),
+          const LinearProgressIndicator(
+            minHeight: 3,
+            borderRadius: BorderRadius.all(Radius.circular(99)),
+          ),
+        ],
+        if (_message != null) ...[
+          const SizedBox(height: 12),
+          SoftCard(
+            color: VocabColors.softSurface,
+            borderColor: VocabColors.softSurface,
+            child: SizedBox(
+              width: double.infinity,
+              child: Text(
+                _message!,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
+          ),
+        ],
+        if (_entry != null) ...[
+          const SizedBox(height: 12),
+          _DictionaryResultCard(
+            entry: _entry!,
+            repository: widget.repository,
+            isSpeaking: _isSpeaking,
+            onSpeak: _speak,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _DictionaryResultCard extends StatelessWidget {
+  const _DictionaryResultCard({
+    required this.entry,
+    required this.repository,
+    required this.isSpeaking,
+    required this.onSpeak,
+  });
+
+  final DictionaryEntry entry;
+  final LearningRepository repository;
+  final bool isSpeaking;
+  final VoidCallback onSpeak;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<WordItem>>(
+      stream: repository.watchWords(query: entry.term),
+      builder: (context, snapshot) {
+        WordItem? saved;
+        for (final word in snapshot.data ?? const <WordItem>[]) {
+          if (word.term.trim().toLowerCase() == entry.term.toLowerCase()) {
+            saved = word;
+            break;
+          }
+        }
+        final isFavorite = saved?.isFavorite ?? false;
+        return SoftCard(
+          key: const Key('home-dictionary-result'),
+          padding: const EdgeInsets.fromLTRB(18, 16, 14, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      entry.term,
+                      style: const TextStyle(
+                        fontSize: 24,
+                        height: 1.1,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: isSpeaking ? null : onSpeak,
+                    tooltip: '播放单词发音',
+                    icon: isSpeaking
+                        ? const SizedBox.square(
+                            dimension: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.volume_up_outlined),
+                  ),
+                  IconButton.filledTonal(
+                    onPressed: () async {
+                      if (saved != null) {
+                        await repository.toggleWordFavorite(saved);
+                      } else {
+                        final definition = entry.senses
+                            .map(
+                              (sense) =>
+                                  '${sense.partOfSpeech} ${sense.definition}',
+                            )
+                            .join('\n');
+                        final parts = entry.senses
+                            .map((sense) => sense.partOfSpeech)
+                            .toSet()
+                            .join(' / ');
+                        String? example;
+                        for (final sense in entry.senses) {
+                          if (sense.example != null) {
+                            example = sense.example;
+                            break;
+                          }
+                        }
+                        await repository.favoriteDictionaryWord(
+                          term: entry.term,
+                          definition: definition,
+                          partOfSpeech: parts,
+                          source: entry.source,
+                          example: example,
+                        );
+                      }
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(isFavorite ? '已取消收藏' : '已收藏到词句库'),
+                          ),
+                        );
+                      }
+                    },
+                    tooltip: isFavorite ? '取消收藏' : '收藏',
+                    style: IconButton.styleFrom(
+                      backgroundColor: VocabColors.limeSoft,
+                    ),
+                    icon: Icon(
+                      isFavorite
+                          ? Icons.star_rounded
+                          : Icons.star_border_rounded,
+                      color: isFavorite ? VocabColors.coral : VocabColors.ink,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              if (saved != null &&
+                  !saved.source.contains('Open English WordNet')) ...[
+                Text('我的释义', style: Theme.of(context).textTheme.labelLarge),
+                const SizedBox(height: 3),
+                Text(
+                  saved.definition,
+                  style: Theme.of(context).textTheme.bodyLarge,
+                ),
+                const SizedBox(height: 12),
+              ],
+              for (var index = 0; index < entry.senses.length; index++) ...[
+                Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(
+                        text: '${entry.senses[index].partOfSpeech}  ',
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                      TextSpan(text: entry.senses[index].definition),
+                    ],
+                  ),
+                  style: const TextStyle(fontSize: 13, height: 1.45),
+                ),
+                if (entry.senses[index].example case final example?) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    example,
+                    style: Theme.of(context).textTheme.bodyMedium
+                        ?.copyWith(fontStyle: FontStyle.italic),
+                  ),
+                ],
+                if (index != entry.senses.length - 1)
+                  const SizedBox(height: 10),
+              ],
+              const SizedBox(height: 12),
+              Text(
+                '${entry.source} · 本地词典 · 无需 API Key',
+                style: const TextStyle(fontSize: 10, color: VocabColors.muted),
+              ),
+            ],
+          ),
         );
       },
     );
