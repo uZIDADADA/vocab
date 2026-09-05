@@ -51,7 +51,7 @@ Create a Gemini key in [Google AI Studio](https://aistudio.google.com/apikey).
 
 ## KISS-Worker vocabulary import
 
-Open **我的 → KISS-Worker 收藏词汇 → 同步设置** and enter the same HTTPS
+Open **我的 → KISS-Worker 词汇同步 → 同步设置** and enter the same HTTPS
 Worker endpoint, sync key, and encryption passphrase used by KISS Translator.
 All three values are stored in platform secure storage. The app requests
 `kiss-words.json`, performs PBKDF2-SHA-256/AES-GCM decryption on the device,
@@ -59,18 +59,38 @@ shows a confirmation before importing, skips existing terms, and never sends
 decrypted vocabulary to the Worker. Imported words are immediately available
 in the four-rating review flow under **今日**.
 
-## Merriam-Webster pronunciation
+### Upload words added on the phone
 
-Word cards use the Merriam-Webster Collegiate Dictionary API for recorded
-American-English pronunciation. Create a key in the
-[Merriam-Webster Developer Center](https://dictionaryapi.com/), then open
-**我的 → Merriam-Webster 真人发音** and save the Collegiate API key.
+Use **我的 → 上传本机新增** and confirm the upload. Manually added words
+and words saved from AI practice are merged into the remote word book after
+client-side encryption. Imported words, demo entries, deleted words, sentence
+patterns, and review history are excluded. Matching terms ignore case and
+surrounding whitespace; existing remote entries and their unknown fields win.
+Uploading again skips words already present. This is manual, additive upload,
+not background sync or deletion/edit propagation.
 
-The key is stored with the platform secure-storage service and is never written
-to SQLite. The first play looks up and downloads the official MP3; later plays
-reuse a 50 MB least-recently-used cache in the app's temporary directory. Audio
-is not bundled in the APK and is not copied to WebDAV. Before distributing the
-app, review Merriam-Webster's current API license and branding requirements.
+The adapter uses the official KISS-Worker `POST /sync` protocol. It increments
+the observed remote version and retries merging a newer returned record up to
+three times. The protocol has no compare-and-swap guarantee; older Worker/KV
+deployments or other clients can still overwrite a whole book later. Real
+Worker and browser-extension interoperability still requires device validation.
+
+## Word pronunciation
+
+Word cards use the device's built-in English text-to-speech engine by default,
+via the open-source `flutter_tts` bridge. No dictionary HTTP API or key is used
+for this path. Android selects an offline English voice; install an English
+voice pack in system speech settings if none is available. US English is
+preferred, with another installed English voice as fallback.
+
+Optionally open **我的 → 单词发音** and save a Merriam-Webster Collegiate key.
+Configured keys take priority for default/US recorded pronunciation; lookup/download
+failures fall back to system speech. MW recordings use a 50 MB local cache,
+and the key remains in platform secure storage. Only the MW path sends the
+word to an online dictionary. British pronunciation uses the system en-GB voice.
+The review screen shows existing phonetics, part of speech, meaning and example
+with separate UK/US speech buttons. Missing dictionary data is not fetched or
+invented. No Free Dictionary API requests remain.
 
 ## License
 

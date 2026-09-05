@@ -26,6 +26,8 @@ class LibraryView extends StatefulWidget {
 
 class _LibraryViewState extends State<LibraryView> {
   String _query = '';
+  bool _favoritesOnly = false;
+  bool _alphabetical = false;
   String? _playingWordId;
 
   @override
@@ -47,7 +49,36 @@ class _LibraryViewState extends State<LibraryView> {
                       RoundActionButton(
                         icon: Icons.tune_rounded,
                         tooltip: '筛选',
-                        onPressed: noop,
+                        onPressed: () => showModalBottomSheet<void>(
+                          context: context,
+                          builder: (sheetContext) => SafeArea(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ListTile(
+                                  title: const Text('全部词句'),
+                                  trailing: !_favoritesOnly
+                                      ? const Icon(Icons.check)
+                                      : null,
+                                  onTap: () {
+                                    setState(() => _favoritesOnly = false);
+                                    Navigator.pop(sheetContext);
+                                  },
+                                ),
+                                ListTile(
+                                  title: const Text('仅看收藏'),
+                                  trailing: _favoritesOnly
+                                      ? const Icon(Icons.check)
+                                      : null,
+                                  onTap: () {
+                                    setState(() => _favoritesOnly = true);
+                                    Navigator.pop(sheetContext);
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -72,6 +103,10 @@ class _LibraryViewState extends State<LibraryView> {
                     onPronounce: _playPronunciation,
                     segment: widget.selectedSegment,
                     query: _query,
+                    favoritesOnly: _favoritesOnly,
+                    alphabetical: _alphabetical,
+                    onSortChanged: (value) =>
+                        setState(() => _alphabetical = value),
                   ),
                 ],
               ),
@@ -191,6 +226,9 @@ class _LibraryContent extends StatelessWidget {
     required this.onPronounce,
     required this.segment,
     required this.query,
+    required this.favoritesOnly,
+    required this.alphabetical,
+    required this.onSortChanged,
     super.key,
   });
 
@@ -199,6 +237,9 @@ class _LibraryContent extends StatelessWidget {
   final ValueChanged<WordItem> onPronounce;
   final int segment;
   final String query;
+  final bool favoritesOnly;
+  final bool alphabetical;
+  final ValueChanged<bool> onSortChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -208,10 +249,25 @@ class _LibraryContent extends StatelessWidget {
         builder: (context, snapshot) {
           if (snapshot.hasError) return const _DatabaseError();
           if (!snapshot.hasData) return const _LoadingList();
-          final items = snapshot.data!;
+          final items = snapshot.data!
+              .where((item) => !favoritesOnly || item.isFavorite)
+              .toList();
+          items.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+          if (alphabetical) {
+            items.sort(
+              (a, b) => a.term.toLowerCase().compareTo(b.term.toLowerCase()),
+            );
+          }
           return _ResultList(
             count: items.length,
-            emptyLabel: query.isEmpty ? '还没有单词，先添加一个吧' : '没有找到匹配的单词',
+            favoritesOnly: favoritesOnly,
+            alphabetical: alphabetical,
+            onSortChanged: onSortChanged,
+            emptyLabel: favoritesOnly
+                ? '没有符合条件的收藏单词'
+                : query.isEmpty
+                ? '还没有单词，先添加一个吧'
+                : '没有找到匹配的单词',
             children: [
               for (final (index, item) in items.indexed)
                 Padding(
@@ -249,10 +305,26 @@ class _LibraryContent extends StatelessWidget {
       builder: (context, snapshot) {
         if (snapshot.hasError) return const _DatabaseError();
         if (!snapshot.hasData) return const _LoadingList();
-        final items = snapshot.data!;
+        final items = snapshot.data!
+            .where((item) => !favoritesOnly || item.isFavorite)
+            .toList();
+        items.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+        if (alphabetical) {
+          items.sort(
+            (a, b) =>
+                a.pattern.toLowerCase().compareTo(b.pattern.toLowerCase()),
+          );
+        }
         return _ResultList(
           count: items.length,
-          emptyLabel: query.isEmpty ? '还没有句式，先添加一个吧' : '没有找到匹配的句式',
+          favoritesOnly: favoritesOnly,
+          alphabetical: alphabetical,
+          onSortChanged: onSortChanged,
+          emptyLabel: favoritesOnly
+              ? '没有符合条件的收藏句式'
+              : query.isEmpty
+              ? '还没有句式，先添加一个吧'
+              : '没有找到匹配的句式',
           children: [
             for (final (index, item) in items.indexed)
               Padding(
@@ -283,11 +355,17 @@ class _LibraryContent extends StatelessWidget {
 class _ResultList extends StatelessWidget {
   const _ResultList({
     required this.count,
+    required this.favoritesOnly,
+    required this.alphabetical,
+    required this.onSortChanged,
     required this.emptyLabel,
     required this.children,
   });
 
   final int count;
+  final bool favoritesOnly;
+  final bool alphabetical;
+  final ValueChanged<bool> onSortChanged;
   final String emptyLabel;
   final List<Widget> children;
 
@@ -298,16 +376,28 @@ class _ResultList extends StatelessWidget {
         Row(
           children: [
             Text(
-              '全部 $count',
+              '${favoritesOnly ? '收藏' : '全部'} $count',
               style: const TextStyle(fontSize: 12, color: VocabColors.muted),
             ),
             const Spacer(),
-            const Text(
-              '最近使用',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+            PopupMenuButton<bool>(
+              tooltip: '排序',
+              initialValue: alphabetical,
+              onSelected: onSortChanged,
+              itemBuilder: (context) => const [
+                PopupMenuItem(value: false, child: Text('最近更新')),
+                PopupMenuItem(value: true, child: Text('字母顺序')),
+              ],
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Row(
+                  children: [
+                    Text(alphabetical ? '字母顺序' : '最近更新'),
+                    const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
+                  ],
+                ),
+              ),
             ),
-            const SizedBox(width: 4),
-            const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
           ],
         ),
         const SizedBox(height: 12),
@@ -439,7 +529,29 @@ class _LibraryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SoftCard(
-      onTap: noop,
+      onTap: () => showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(title),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SelectableText(subtitle),
+                const SizedBox(height: 16),
+                Text('$tag · 掌握度 $mastery/5'),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('关闭'),
+            ),
+          ],
+        ),
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -478,7 +590,7 @@ class _LibraryCard extends StatelessWidget {
                               )
                             : IconButton(
                                 onPressed: onAudio,
-                                tooltip: '播放 Merriam-Webster 发音',
+                                tooltip: '播放单词发音',
                                 visualDensity: VisualDensity.compact,
                                 constraints: const BoxConstraints.tightFor(
                                   width: 32,

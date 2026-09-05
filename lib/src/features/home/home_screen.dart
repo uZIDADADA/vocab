@@ -41,6 +41,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final _coachKey = GlobalKey<CoachViewState>();
   int _tabIndex = 0;
   int _librarySegment = 0;
   int _libraryNavigationVersion = 0;
@@ -99,10 +100,13 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             TodayView(
               repository: widget.repository,
+              pronunciationService: widget.pronunciationService,
               onOpenCoach: () => _selectTab(2),
               onOpenInbox: _openInbox,
               onOpenWords: () => _openLibrary(0),
               onOpenPatterns: () => _openLibrary(1),
+              kissWorkerSettingsRepository: widget.kissWorkerSettingsRepository,
+              onOpenWordSync: () => _selectTab(3),
             ),
             LibraryView(
               key: ValueKey('library-$_libraryNavigationVersion'),
@@ -116,12 +120,14 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
             CoachView(
+              key: _coachKey,
               settingsRepository: widget.aiSettingsRepository,
               conversationRepository: widget.conversationRepository,
               learningRepository: widget.repository,
               provider: widget.aiChatProvider,
             ),
             ProfileView(
+              onOpenAiSettings: () => _coachKey.currentState?.openSettings(),
               repository: widget.repository,
               pronunciationSettingsRepository:
                   widget.pronunciationSettingsRepository,

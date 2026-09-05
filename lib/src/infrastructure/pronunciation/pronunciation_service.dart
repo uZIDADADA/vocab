@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as p;
@@ -10,8 +13,13 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../data/repositories/pronunciation_settings_repository.dart';
 
+enum PronunciationAccent { automatic, british, american }
+
 abstract interface class PronunciationService {
-  Future<void> play(String term);
+  Future<void> play(
+    String term, {
+    PronunciationAccent accent = PronunciationAccent.automatic,
+  });
 
   Future<void> dispose();
 }
@@ -48,15 +56,96 @@ class PronunciationException implements Exception {
   String toString() => message;
 }
 
-class MerriamWebsterPronunciationService implements PronunciationService {
-  MerriamWebsterPronunciationService({
+/// Uses the device speech engine, without a dictionary or cloud HTTP request.
+class SystemPronunciationService implements PronunciationService {
+  SystemPronunciationService({FlutterTts? tts}) : _tts = tts ?? FlutterTts();
+
+  final FlutterTts _tts;
+
+  @override
+  Future<void> play(
+    String term, {
+    PronunciationAccent accent = PronunciationAccent.automatic,
+  }) async {
+    try {
+      await _tts.stop();
+      final voices = await _tts.getVoices;
+      final available = voices is List
+          ? voices.whereType<Map>().where((voice) {
+              final locale = voice['locale']?.toString().replaceAll('_', '-');
+              final offline =
+                  defaultTargetPlatform != TargetPlatform.android ||
+                  voice['network_required'] == false ||
+                  voice['network_required'] == 'false' ||
+                  voice['network_required'] == '0';
+              return locale != null &&
+                  locale.startsWith('en-') &&
+                  offline &&
+                  !(voice['features']?.toString().contains('notInstalled') ??
+                      false) &&
+                  voice['name'] is String;
+            }).toList()
+          : <Map>[];
+      if (available.isEmpty) {
+        throw const PronunciationException('未找到本机英文语音，请在系统语音设置中安装英文离线语音包。');
+      }
+      final targetLocale = accent == PronunciationAccent.british
+          ? 'en-GB'
+          : 'en-US';
+      final matching = available
+          .where(
+            (voice) =>
+                voice['locale'].toString().replaceAll('_', '-') == targetLocale,
+          )
+          .toList();
+      if (accent != PronunciationAccent.automatic && matching.isEmpty) {
+        throw PronunciationException(
+          '请在系统语音设置中安装${accent == PronunciationAccent.british ? '英式' : '美式'}英文离线语音包。',
+        );
+      }
+      final voice = available.firstWhere(
+        (voice) =>
+            voice['locale'].toString().replaceAll('_', '-') == targetLocale,
+        orElse: () => available.first,
+      );
+      await _tts.setVoice({
+        'name': voice['name'].toString(),
+        'locale': voice['locale'].toString(),
+      });
+      await _tts.awaitSpeakCompletion(true);
+      final result = await _tts
+          .speak(term)
+          .timeout(const Duration(seconds: 30));
+      if (result != 1) {
+        throw const PronunciationException('系统朗读失败，请检查英文语音包后重试。');
+      }
+    } on TimeoutException {
+      await _tts.stop();
+      throw const PronunciationException('系统朗读超时，请重试。');
+    } on PlatformException {
+      throw const PronunciationException('系统朗读不可用，请检查英文语音包后重试。');
+    } on MissingPluginException {
+      throw const PronunciationException('当前设备不支持系统朗读。');
+    }
+  }
+
+  @override
+  Future<void> dispose() async {
+    await _tts.stop();
+  }
+}
+
+class DictionaryPronunciationService implements PronunciationService {
+  DictionaryPronunciationService({
     required this.settingsRepository,
     http.Client? client,
     PronunciationAudioPlayer? player,
+    PronunciationService? systemSpeech,
     Future<Directory> Function()? cacheDirectory,
     this.maxCacheBytes = 50 * 1024 * 1024,
   }) : _client = client ?? http.Client(),
        _ownsClient = client == null,
+       _systemSpeech = systemSpeech ?? SystemPronunciationService(),
        _player = player ?? JustAudioPronunciationPlayer(),
        _cacheDirectory = cacheDirectory ?? _defaultCacheDirectory;
 
@@ -67,36 +156,48 @@ class MerriamWebsterPronunciationService implements PronunciationService {
   final PronunciationSettingsRepository settingsRepository;
   final http.Client _client;
   final bool _ownsClient;
+  final PronunciationService _systemSpeech;
   final PronunciationAudioPlayer _player;
   final Future<Directory> Function() _cacheDirectory;
   final int maxCacheBytes;
 
   @override
-  Future<void> play(String term) async {
+  Future<void> play(
+    String term, {
+    PronunciationAccent accent = PronunciationAccent.automatic,
+  }) async {
     final normalized = term.trim().toLowerCase();
     if (normalized.isEmpty) {
       throw const PronunciationException('单词不能为空。');
     }
 
+    final apiKey = await settingsRepository.loadApiKey();
+    if (accent != PronunciationAccent.british &&
+        apiKey != null &&
+        apiKey.trim().isNotEmpty) {
+      try {
+        await _playFromSource(normalized, apiKey: apiKey);
+        return;
+      } on PronunciationException {
+        // A missing recording or unavailable provider must not require setup.
+      }
+    }
+    await _systemSpeech.play(normalized, accent: accent);
+  }
+
+  Future<void> _playFromSource(String term, {required String apiKey}) async {
     final directory = await _ensureCacheDirectory();
+    const source = 'merriam-webster';
     final cachedFile = File(
-      p.join(directory.path, '${_cacheKey(normalized)}.mp3'),
+      p.join(directory.path, '${_cacheKey('$source:$term')}.mp3'),
     );
     if (await cachedFile.exists() && await cachedFile.length() > 0) {
       await cachedFile.setLastModified(DateTime.now());
       await _player.playFile(cachedFile.path);
       return;
     }
-
-    final apiKey = await settingsRepository.loadApiKey();
-    if (apiKey == null) {
-      throw const PronunciationException(
-        '请先在“我的”页面配置 Merriam-Webster API Key。',
-      );
-    }
-
-    final audioBase = await _lookupAudioBase(normalized, apiKey);
-    final audioBytes = await _downloadAudio(audioUri(audioBase));
+    final uri = audioUri(await _lookupAudioBase(term, apiKey));
+    final audioBytes = await _downloadAudio(uri);
     await _writeAtomically(cachedFile, audioBytes);
     await _trimCache(directory, keepPath: cachedFile.path);
     await _player.playFile(cachedFile.path);
@@ -117,8 +218,8 @@ class MerriamWebsterPronunciationService implements PronunciationService {
           .timeout(const Duration(seconds: 15));
     } on TimeoutException {
       throw const PronunciationException('词典查询超时，请检查网络后重试。');
-    } on http.ClientException catch (error) {
-      throw PronunciationException('词典查询失败：${error.message}');
+    } on http.ClientException {
+      throw const PronunciationException('词典查询失败，请检查网络后重试。');
     }
 
     if (response.statusCode == 401 || response.statusCode == 403) {
@@ -221,7 +322,7 @@ class MerriamWebsterPronunciationService implements PronunciationService {
 
   static Future<Directory> _defaultCacheDirectory() async {
     final root = await getTemporaryDirectory();
-    return Directory(p.join(root.path, 'pronunciation', 'merriam-webster-v1'));
+    return Directory(p.join(root.path, 'pronunciation', 'dictionary-v2'));
   }
 
   Future<Directory> _ensureCacheDirectory() async {
@@ -273,5 +374,6 @@ class MerriamWebsterPronunciationService implements PronunciationService {
   Future<void> dispose() async {
     if (_ownsClient) _client.close();
     await _player.dispose();
+    await _systemSpeech.dispose();
   }
 }

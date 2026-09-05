@@ -55,7 +55,7 @@ class _VocabAppState extends State<VocabApp> {
       widget.pronunciationService == null;
   late final PronunciationService _pronunciationService =
       widget.pronunciationService ??
-      MerriamWebsterPronunciationService(
+      DictionaryPronunciationService(
         settingsRepository: _pronunciationSettingsRepository,
       );
   late final bool _ownsKissVocabularyService =

@@ -1,26 +1,36 @@
 import 'package:flutter/material.dart';
 
+import '../../data/repositories/kiss_worker_settings_repository.dart';
 import '../../data/repositories/learning_repository.dart';
 import '../../domain/learning_models.dart';
+import '../../infrastructure/pronunciation/pronunciation_service.dart';
 import '../../theme/vocab_theme.dart';
 import '../../widgets/vocab_ui.dart';
+import '../calendar/learning_calendar_page.dart';
+import '../reminders/reminder_page.dart';
 import '../review/review_session_page.dart';
 
 class TodayView extends StatelessWidget {
   const TodayView({
     required this.repository,
+    required this.pronunciationService,
     required this.onOpenCoach,
     required this.onOpenInbox,
     required this.onOpenWords,
     required this.onOpenPatterns,
+    required this.kissWorkerSettingsRepository,
+    required this.onOpenWordSync,
     super.key,
   });
 
   final LearningRepository repository;
+  final PronunciationService pronunciationService;
   final VoidCallback onOpenCoach;
   final VoidCallback onOpenInbox;
   final VoidCallback onOpenWords;
   final VoidCallback onOpenPatterns;
+  final KissWorkerSettingsRepository kissWorkerSettingsRepository;
+  final VoidCallback onOpenWordSync;
 
   @override
   Widget build(BuildContext context) {
@@ -37,11 +47,15 @@ class TodayView extends StatelessWidget {
               padding: pagePadding,
               sliver: SliverList.list(
                 children: [
-                  _TodayHeader(stats: stats),
+                  _TodayHeader(repository: repository),
                   const SizedBox(height: 22),
-                  _OverviewCard(stats: stats),
+                  _OverviewCard(stats: stats, repository: repository),
                   const SizedBox(height: 16),
-                  _ReviewCard(stats: stats, repository: repository),
+                  _ReviewCard(
+                    stats: stats,
+                    repository: repository,
+                    pronunciationService: pronunciationService,
+                  ),
                   const SizedBox(height: 14),
                   _ContinueCard(onTap: onOpenCoach),
                   const SizedBox(height: 14),
@@ -62,6 +76,11 @@ class TodayView extends StatelessWidget {
                           : '已累计完成 ${stats.reviewCount} 次复习。完整的复习历史会在后续版本开放。',
                     ),
                   ),
+                  const SizedBox(height: 14),
+                  _WordSyncEntry(
+                    settingsRepository: kissWorkerSettingsRepository,
+                    onTap: onOpenWordSync,
+                  ),
                 ],
               ),
             ),
@@ -73,9 +92,9 @@ class TodayView extends StatelessWidget {
 }
 
 class _TodayHeader extends StatelessWidget {
-  const _TodayHeader({required this.stats});
+  const _TodayHeader({required this.repository});
 
-  final LearningStats stats;
+  final LearningRepository repository;
 
   @override
   Widget build(BuildContext context) {
@@ -86,24 +105,19 @@ class _TodayHeader extends StatelessWidget {
         RoundActionButton(
           icon: Icons.calendar_today_outlined,
           tooltip: '学习日历',
-          onPressed: () => _showStatusSheet(
-            context,
-            icon: Icons.calendar_month_outlined,
-            title: '学习日历',
-            message:
-                '今天有 ${stats.dueCount} 项待复习，已累计完成 ${stats.reviewCount} 次复习。完整的日期视图会在后续版本开放。',
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => LearningCalendarPage(repository: repository),
+            ),
           ),
         ),
         const SizedBox(width: 8),
         RoundActionButton(
           icon: Icons.notifications_none_rounded,
           tooltip: '提醒',
-          onPressed: () => _showStatusSheet(
+          onPressed: () => Navigator.of(
             context,
-            icon: Icons.notifications_none_rounded,
-            title: '学习提醒',
-            message: '提醒功能尚未开放。目前打开 Vocab 后，首页会自动显示当天到期的复习内容。',
-          ),
+          ).push(MaterialPageRoute<void>(builder: (_) => const ReminderPage())),
         ),
       ],
     );
@@ -154,7 +168,9 @@ void _showStatusSheet(
 }
 
 class _OverviewCard extends StatelessWidget {
-  const _OverviewCard({required this.stats});
+  const _OverviewCard({required this.stats, required this.repository});
+
+  final LearningRepository repository;
 
   final LearningStats stats;
 
@@ -163,12 +179,17 @@ class _OverviewCard extends StatelessWidget {
     return SoftCard(
       child: Row(
         children: [
-          const Expanded(
-            child: _OverviewMetric(
-              icon: Icons.local_fire_department_rounded,
-              iconColor: VocabColors.coral,
-              label: '连续学习',
-              value: '16 天',
+          Expanded(
+            child: StreamBuilder<List<DateTime>>(
+              stream: repository.watchReviewDates(),
+              builder: (context, snapshot) => _OverviewMetric(
+                icon: Icons.local_fire_department_rounded,
+                iconColor: VocabColors.coral,
+                label: '连续学习',
+                value: snapshot.hasData
+                    ? '${LearningRepository.streak(snapshot.data!, DateTime.now())} 天'
+                    : '—',
+              ),
             ),
           ),
           Container(width: 1, height: 52, color: VocabColors.line),
@@ -264,10 +285,15 @@ class _ReviewProgress extends StatelessWidget {
 }
 
 class _ReviewCard extends StatelessWidget {
-  const _ReviewCard({required this.stats, required this.repository});
+  const _ReviewCard({
+    required this.stats,
+    required this.repository,
+    required this.pronunciationService,
+  });
 
   final LearningStats stats;
   final LearningRepository repository;
+  final PronunciationService pronunciationService;
 
   @override
   Widget build(BuildContext context) {
@@ -277,7 +303,10 @@ class _ReviewCard extends StatelessWidget {
       padding: const EdgeInsets.all(20),
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (_) => ReviewSessionPage(repository: repository),
+          builder: (_) => ReviewSessionPage(
+            repository: repository,
+            pronunciationService: pronunciationService,
+          ),
         ),
       ),
       child: Row(
@@ -495,6 +524,64 @@ class _MetricTile extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _WordSyncEntry extends StatelessWidget {
+  const _WordSyncEntry({required this.settingsRepository, required this.onTap});
+
+  final KissWorkerSettingsRepository settingsRepository;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder(
+      future: settingsRepository.load(),
+      builder: (context, snapshot) {
+        final configured = snapshot.data?.isConfigured == true;
+        final subtitle = switch (snapshot.connectionState) {
+          ConnectionState.waiting => '正在读取同步配置…',
+          _ when configured => '已配置 · 手动导入与增量上传',
+          _ => '未配置 · 点击完成 KISS-Worker 设置',
+        };
+        return SoftCard(
+          key: const Key('home-word-sync'),
+          onTap: onTap,
+          child: Row(
+            children: [
+              CircleIcon(
+                icon: configured
+                    ? Icons.cloud_done_outlined
+                    : Icons.cloud_sync_outlined,
+                background: VocabColors.limeSoft,
+                foreground: configured ? VocabColors.green : VocabColors.muted,
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '词汇同步',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: VocabColors.muted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded),
+            ],
+          ),
+        );
+      },
     );
   }
 }

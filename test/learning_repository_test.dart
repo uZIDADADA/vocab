@@ -18,6 +18,40 @@ void main() {
 
   tearDown(() => database.close());
 
+  test('streak uses distinct calendar days and permits unfinished today', () {
+    final now = DateTime(2026, 3, 1, 12);
+    expect(LearningRepository.streak([], now), 0);
+    final dates = [
+      DateTime(2026, 2, 28, 10),
+      DateTime(2026, 2, 28, 20),
+      DateTime(2026, 2, 27),
+    ];
+    expect(LearningRepository.streak(dates, now), 2);
+    expect(LearningRepository.streak([...dates, now], now), 3);
+    expect(LearningRepository.streak(dates, DateTime(2026, 3, 2)), 0);
+  });
+
+  test('review calendar reads persisted events', () async {
+    expect(await repository.watchReviewDates().first, isEmpty);
+    final word = (await repository.watchWords().first).first;
+    await repository.review(itemType: 'word', itemId: word.id, rating: 3);
+    expect(await repository.watchReviewDates().first, hasLength(1));
+  });
+
+  test('upload candidates exclude imported, deleted and demo words', () async {
+    expect(await repository.wordsForUpload(), isEmpty);
+    await repository.addWord(term: 'phone', definition: '手机');
+    await repository.importVocabulary(const [
+      ImportedVocabularyCandidate(term: 'remote', definition: '远端'),
+    ]);
+    expect((await repository.wordsForUpload()).map((word) => word.term), [
+      'phone',
+    ]);
+    final word = (await repository.watchWords(query: 'phone').first).single;
+    await repository.deleteWord(word.id);
+    expect(await repository.wordsForUpload(), isEmpty);
+  });
+
   test('seeds and searches local vocabulary', () async {
     expect(await repository.watchWords().first, hasLength(3));
 

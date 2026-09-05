@@ -8,8 +8,9 @@ import '../../infrastructure/sync/kiss_worker_vocabulary_service.dart';
 import '../../theme/vocab_theme.dart';
 import '../../widgets/vocab_ui.dart';
 
-class ProfileView extends StatelessWidget {
+class ProfileView extends StatefulWidget {
   const ProfileView({
+    required this.onOpenAiSettings,
     required this.repository,
     required this.pronunciationSettingsRepository,
     required this.kissWorkerSettingsRepository,
@@ -22,10 +23,19 @@ class ProfileView extends StatelessWidget {
   final KissWorkerSettingsRepository kissWorkerSettingsRepository;
   final KissVocabularyService kissVocabularyService;
 
+  final VoidCallback onOpenAiSettings;
+
+  @override
+  State<ProfileView> createState() => _ProfileViewState();
+}
+
+class _ProfileViewState extends State<ProfileView> {
+  final _kissKey = GlobalKey<_KissWorkerCardState>();
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<LearningStats>(
-      stream: repository.watchStats(),
+      stream: widget.repository.watchStats(),
       initialData: const LearningStats.empty(),
       builder: (context, snapshot) {
         final stats = snapshot.data ?? const LearningStats.empty();
@@ -43,22 +53,26 @@ class ProfileView extends StatelessWidget {
                   ),
                   const SizedBox(height: 20),
                   _KissWorkerCard(
-                    learningRepository: repository,
-                    settingsRepository: kissWorkerSettingsRepository,
-                    service: kissVocabularyService,
+                    key: _kissKey,
+                    learningRepository: widget.repository,
+                    settingsRepository: widget.kissWorkerSettingsRepository,
+                    service: widget.kissVocabularyService,
                   ),
                   const SizedBox(height: 14),
                   _SyncStatusCard(stats: stats),
                   const SizedBox(height: 14),
                   _PronunciationSettingsCard(
-                    repository: pronunciationSettingsRepository,
+                    repository: widget.pronunciationSettingsRepository,
                   ),
                   const SizedBox(height: 14),
                   const _PrivacyCard(),
                   const SizedBox(height: 24),
                   const SectionHeader(title: '更多设置'),
                   const SizedBox(height: 12),
-                  const _MoreSettingsCard(),
+                  _MoreSettingsCard(
+                    onOpenAiSettings: widget.onOpenAiSettings,
+                    onImport: () => _kissKey.currentState?._sync(),
+                  ),
                 ],
               ),
             ),
@@ -71,6 +85,7 @@ class ProfileView extends StatelessWidget {
 
 class _KissWorkerCard extends StatefulWidget {
   const _KissWorkerCard({
+    super.key,
     required this.learningRepository,
     required this.settingsRepository,
     required this.service,
@@ -87,39 +102,73 @@ class _KissWorkerCard extends StatefulWidget {
 class _KissWorkerCardState extends State<_KissWorkerCard> {
   late Future<KissWorkerSettings> _settings = widget.settingsRepository.load();
   bool _isSyncing = false;
+  bool _isConfiguring = false;
+  String _syncStage = '读取中…';
 
   Future<bool> _configure() async {
-    final current = await widget.settingsRepository.load();
-    if (!mounted) return false;
-    final input = await showDialog<_KissConfigInput>(
-      context: context,
-      builder: (context) => _KissWorkerConfigDialog(current: current),
-    );
-    if (input == null) return false;
-    await widget.settingsRepository.save(
-      endpoint: input.endpoint,
-      replacementSyncKey: input.syncKey,
-      replacementEncryptionPassphrase: input.passphrase,
-    );
-    if (!mounted) return true;
-    setState(() => _settings = widget.settingsRepository.load());
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('KISS-Worker 设置已保存在本机')));
-    return true;
+    if (_isConfiguring) return false;
+    setState(() => _isConfiguring = true);
+    try {
+      final current = await widget.settingsRepository.load();
+      if (!mounted) return false;
+      final saved = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => _KissWorkerConfigDialog(
+          current: current,
+          onSave: (input) async {
+            await widget.settingsRepository.save(
+              endpoint: input.endpoint,
+              replacementSyncKey: input.syncKey,
+              replacementEncryptionPassphrase: input.passphrase,
+            );
+            if (!mounted) return;
+            setState(() {
+              _settings = Future.value(
+                KissWorkerSettings(
+                  endpoint: input.endpoint,
+                  syncKey: input.syncKey ?? current.syncKey,
+                  encryptionPassphrase:
+                      input.passphrase ?? current.encryptionPassphrase,
+                ),
+              );
+            });
+          },
+        ),
+      );
+      if (saved != true || !mounted) return false;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('KISS-Worker 设置已保存并生效')));
+      return true;
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('无法读取同步设置，请重试。')));
+      }
+      return false;
+    } finally {
+      if (mounted) setState(() => _isConfiguring = false);
+    }
   }
 
   Future<void> _sync() async {
-    var settings = await widget.settingsRepository.load();
-    if (!settings.isConfigured) {
-      final saved = await _configure();
-      if (!saved) return;
-      settings = await widget.settingsRepository.load();
-    }
-    if (!mounted) return;
-    setState(() => _isSyncing = true);
+    if (_isSyncing || _isConfiguring) return;
+    setState(() {
+      _isSyncing = true;
+      _syncStage = '读取中…';
+    });
     try {
+      var settings = await widget.settingsRepository.load();
+      if (!mounted) return;
+      if (!settings.isConfigured) {
+        final saved = await _configure();
+        if (!saved || !mounted) return;
+        settings = await widget.settingsRepository.load();
+      }
+      if (!mounted) return;
       final candidates = await widget.service.fetchWords(settings);
       if (!mounted) return;
+      setState(() => _syncStage = '待确认');
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
@@ -139,7 +188,8 @@ class _KissWorkerCardState extends State<_KissWorkerCard> {
           ],
         ),
       );
-      if (confirmed != true) return;
+      if (confirmed != true || !mounted) return;
+      setState(() => _syncStage = '写入中…');
       final result = await widget.learningRepository.importVocabulary(
         candidates,
       );
@@ -159,6 +209,64 @@ class _KissWorkerCardState extends State<_KissWorkerCard> {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('导入失败，请检查网络和同步设置。')));
+    } finally {
+      if (mounted) setState(() => _isSyncing = false);
+    }
+  }
+
+  Future<void> _upload() async {
+    if (_isSyncing || _isConfiguring) return;
+    setState(() {
+      _isSyncing = true;
+      _syncStage = '读取中…';
+    });
+    try {
+      var settings = await widget.settingsRepository.load();
+      if (!mounted) return;
+      if (!settings.isConfigured) {
+        if (!await _configure() || !mounted) return;
+        settings = await widget.settingsRepository.load();
+      }
+      final words = await widget.learningRepository.wordsForUpload();
+      if (!mounted) return;
+      setState(() => _syncStage = '待确认');
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('确认上传本机新增'),
+          content: Text(
+            '将检查 ${words.length} 个本机手动添加或 AI 对练保存的单词，只上传云端没有的词。内容在本机加密，同名词保留云端内容；不会同步删除、句式或学习进度。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('确认上传'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+      setState(() => _syncStage = '上传中…');
+      final count = await widget.service.uploadWords(settings, words);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('上传完成：新增 $count 个单词，其余词条已存在或无需上传')),
+      );
+    } on KissWorkerException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('上传未确认成功，请检查网络和配置后重试；本机单词仍保留。')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isSyncing = false);
     }
@@ -193,12 +301,12 @@ class _KissWorkerCardState extends State<_KissWorkerCard> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'KISS-Worker 收藏词汇',
+                          'KISS-Worker 词汇同步',
                           style: Theme.of(context).textTheme.titleLarge,
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          configured ? '只读拉取 · 本机解密 · 不回写云端' : '配置简约翻译的同步地址与密钥',
+                          configured ? '手动导入与增量上传 · 本机加密' : '配置同步地址、密钥与本机加密口令',
                           style: const TextStyle(
                             fontSize: 12,
                             color: VocabColors.muted,
@@ -221,7 +329,9 @@ class _KissWorkerCardState extends State<_KissWorkerCard> {
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: _isSyncing ? null : _configure,
+                      onPressed: _isSyncing || _isConfiguring
+                          ? null
+                          : _configure,
                       icon: const Icon(Icons.settings_outlined),
                       label: const Text('同步设置'),
                     ),
@@ -229,17 +339,26 @@ class _KissWorkerCardState extends State<_KissWorkerCard> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: FilledButton.icon(
-                      onPressed: _isSyncing ? null : _sync,
-                      icon: _isSyncing
+                      onPressed: _isSyncing || _isConfiguring ? null : _sync,
+                      icon: _isSyncing && !_isConfiguring && _syncStage != '待确认'
                           ? const SizedBox.square(
                               dimension: 17,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Icon(Icons.download_rounded),
-                      label: Text(_isSyncing ? '导入中…' : '只读导入'),
+                      label: Text(_isSyncing ? _syncStage : '从 KISS 导入'),
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _isSyncing || _isConfiguring ? null : _upload,
+                  icon: const Icon(Icons.cloud_upload_outlined),
+                  label: const Text('上传本机新增'),
+                ),
               ),
             ],
           ),
@@ -262,7 +381,9 @@ class _KissConfigInput {
 }
 
 class _KissWorkerConfigDialog extends StatefulWidget {
-  const _KissWorkerConfigDialog({required this.current});
+  const _KissWorkerConfigDialog({required this.current, required this.onSave});
+
+  final Future<void> Function(_KissConfigInput) onSave;
 
   final KissWorkerSettings current;
 
@@ -278,6 +399,7 @@ class _KissWorkerConfigDialogState extends State<_KissWorkerConfigDialog> {
   final TextEditingController _syncKey = TextEditingController();
   final TextEditingController _passphrase = TextEditingController();
   String? _error;
+  bool _isSaving = false;
 
   @override
   void dispose() {
@@ -287,7 +409,8 @@ class _KissWorkerConfigDialogState extends State<_KissWorkerConfigDialog> {
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
+    if (_isSaving) return;
     final endpoint = Uri.tryParse(_endpoint.text.trim());
     final missingSyncKey =
         widget.current.syncKey?.isNotEmpty != true &&
@@ -305,82 +428,104 @@ class _KissWorkerConfigDialogState extends State<_KissWorkerConfigDialog> {
       setState(() => _error = '首次配置必须填写同步密钥和加密口令。');
       return;
     }
-    Navigator.pop(
-      context,
-      _KissConfigInput(
-        endpoint: _endpoint.text.trim(),
-        syncKey: _syncKey.text.trim().isEmpty ? null : _syncKey.text.trim(),
-        passphrase: _passphrase.text.isEmpty ? null : _passphrase.text,
-      ),
-    );
+    setState(() {
+      _isSaving = true;
+      _error = null;
+    });
+    try {
+      await widget.onSave(
+        _KissConfigInput(
+          endpoint: _endpoint.text.trim(),
+          syncKey: _syncKey.text.trim().isEmpty ? null : _syncKey.text.trim(),
+          passphrase: _passphrase.text.isEmpty ? null : _passphrase.text,
+        ),
+      );
+      if (!mounted) return;
+      setState(() => _isSaving = false);
+      await WidgetsBinding.instance.endOfFrame;
+      if (mounted) Navigator.pop(context, true);
+    } catch (_) {
+      if (mounted) setState(() => _error = '保存失败，请重试。设置尚未确认生效。');
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('KISS-Worker 同步设置'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              '应用只读取 kiss-words.json，并在设备上解密；不会修改 Cloudflare KV。',
-              style: TextStyle(fontSize: 12, color: VocabColors.muted),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: _endpoint,
-              keyboardType: TextInputType.url,
-              autocorrect: false,
-              decoration: const InputDecoration(
-                labelText: '同步地址',
-                hintText: 'https://your-worker.workers.dev',
+    return PopScope(
+      canPop: !_isSaving,
+      child: AlertDialog(
+        title: const Text('KISS-Worker 同步设置'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                '导入会在设备上解密 kiss-words.json；上传本机新增单词会先合并云端词库，再加密保存。',
+                style: TextStyle(fontSize: 12, color: VocabColors.muted),
               ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _syncKey,
-              obscureText: true,
-              autocorrect: false,
-              enableSuggestions: false,
-              decoration: InputDecoration(
-                labelText: '同步密钥',
-                hintText: widget.current.syncKey?.isNotEmpty == true
-                    ? '已保存；留空不修改'
-                    : '首次配置必须填写',
+              const SizedBox(height: 14),
+              TextField(
+                enabled: !_isSaving,
+                controller: _endpoint,
+                keyboardType: TextInputType.url,
+                autocorrect: false,
+                decoration: const InputDecoration(
+                  labelText: '同步地址',
+                  hintText: 'https://your-worker.workers.dev',
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _passphrase,
-              obscureText: true,
-              autocorrect: false,
-              enableSuggestions: false,
-              decoration: InputDecoration(
-                labelText: '加密口令',
-                hintText:
-                    widget.current.encryptionPassphrase?.isNotEmpty == true
-                    ? '已保存；留空不修改'
-                    : '首次配置必须填写',
+              const SizedBox(height: 12),
+              TextField(
+                enabled: !_isSaving,
+                controller: _syncKey,
+                obscureText: true,
+                autocorrect: false,
+                enableSuggestions: false,
+                decoration: InputDecoration(
+                  labelText: '同步密钥',
+                  hintText: widget.current.syncKey?.isNotEmpty == true
+                      ? '已保存；留空不修改'
+                      : '首次配置必须填写',
+                ),
               ),
-            ),
-            if (_error case final message?) ...[
-              const SizedBox(height: 10),
-              Text(
-                message,
-                style: const TextStyle(color: VocabColors.coralInk),
+              const SizedBox(height: 12),
+              TextField(
+                enabled: !_isSaving,
+                controller: _passphrase,
+                obscureText: true,
+                autocorrect: false,
+                enableSuggestions: false,
+                decoration: InputDecoration(
+                  labelText: '加密口令',
+                  hintText:
+                      widget.current.encryptionPassphrase?.isNotEmpty == true
+                      ? '已保存；留空不修改'
+                      : '首次配置必须填写',
+                ),
               ),
+              if (_error case final message?) ...[
+                const SizedBox(height: 10),
+                Text(
+                  message,
+                  style: const TextStyle(color: VocabColors.coralInk),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
+        actions: [
+          TextButton(
+            onPressed: _isSaving ? null : () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: _isSaving ? null : _submit,
+            child: Text(_isSaving ? '保存中…' : '保存'),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
-        ),
-        FilledButton(onPressed: _submit, child: const Text('保存')),
-      ],
     );
   }
 }
@@ -423,7 +568,7 @@ class _PronunciationSettingsCardState
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Merriam-Webster 真人发音',
+                      '单词发音',
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w900,
@@ -432,8 +577,8 @@ class _PronunciationSettingsCardState
                     const SizedBox(height: 3),
                     Text(
                       configured
-                          ? 'API Key 已安全保存在本机'
-                          : '点击配置 Collegiate API Key',
+                          ? '优先 Merriam-Webster · 失败时使用系统朗读'
+                          : '系统朗读已启用 · 可选配置 Merriam-Webster',
                       style: const TextStyle(
                         fontSize: 11,
                         color: VocabColors.muted,
@@ -443,7 +588,7 @@ class _PronunciationSettingsCardState
                 ),
               ),
               StatusPill(
-                label: configured ? '已配置' : '未配置',
+                label: configured ? '优先 MW' : '免 Key',
                 color: configured
                     ? VocabColors.surface
                     : VocabColors.softSurface,
@@ -466,7 +611,9 @@ class _PronunciationSettingsCardState
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('请输入 Collegiate Dictionary API Key。密钥只保存在系统安全存储中。'),
+            const Text(
+              '默认使用设备英文语音，无需 Key 或在线词典。Android 需安装英文离线语音包。配置后优先使用 Merriam-Webster 真人录音（首次获取需联网），失败时回退系统朗读。密钥只保存在系统安全存储中。',
+            ),
             const SizedBox(height: 14),
             TextField(
               controller: controller,
@@ -503,7 +650,9 @@ class _PronunciationSettingsCardState
     if (shouldSave == true) {
       await widget.repository.saveApiKey(controller.text);
       if (mounted) {
-        setState(() => _apiKey = widget.repository.loadApiKey());
+        setState(() {
+          _apiKey = widget.repository.loadApiKey();
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Merriam-Webster API Key 已保存')),
         );
@@ -514,7 +663,14 @@ class _PronunciationSettingsCardState
 }
 
 class _SettingRow extends StatelessWidget {
-  const _SettingRow({required this.icon, required this.label, this.value});
+  const _SettingRow({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.value,
+  });
+
+  final VoidCallback onTap;
 
   final IconData icon;
   final String label;
@@ -523,7 +679,7 @@ class _SettingRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: noop,
+      onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 14),
         child: Row(
@@ -606,7 +762,7 @@ class _PrivacyCard extends StatelessWidget {
     return SoftCard(
       color: VocabColors.cyanSoft,
       borderColor: VocabColors.cyanSoft,
-      onTap: noop,
+      onTap: () => _showPrivacy(context),
       child: Row(
         children: [
           const CircleIcon(
@@ -625,7 +781,7 @@ class _PrivacyCard extends StatelessWidget {
                 ),
                 SizedBox(height: 3),
                 Text(
-                  '密钥与敏感连接信息不会上传或同步',
+                  '使用系统安全存储，调用服务时用于鉴权',
                   style: TextStyle(fontSize: 11, color: VocabColors.muted),
                 ),
               ],
@@ -639,33 +795,61 @@ class _PrivacyCard extends StatelessWidget {
 }
 
 class _MoreSettingsCard extends StatelessWidget {
-  const _MoreSettingsCard();
+  const _MoreSettingsCard({
+    required this.onOpenAiSettings,
+    required this.onImport,
+  });
+
+  final VoidCallback onOpenAiSettings;
+  final VoidCallback onImport;
 
   @override
   Widget build(BuildContext context) {
-    return const SoftCard(
+    return SoftCard(
       padding: EdgeInsets.zero,
       child: Column(
         children: [
           _SettingRow(
             icon: Icons.hub_outlined,
             label: 'AI 服务提供商',
-            value: '1 个',
+            onTap: onOpenAiSettings,
           ),
           Divider(height: 1, indent: 54),
           _SettingRow(
             icon: Icons.download_outlined,
             label: '导入 KISS 词汇',
             value: 'KISS-Worker',
+            onTap: onImport,
           ),
           Divider(height: 1, indent: 54),
           _SettingRow(
             icon: Icons.shield_outlined,
             label: '加密与恢复',
             value: '本机解密',
+            onTap: () => _showPrivacy(context),
           ),
         ],
       ),
     );
   }
+}
+
+void _showPrivacy(BuildContext context) {
+  showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('加密与恢复说明'),
+      content: const SingleChildScrollView(
+        child: Text(
+          'API 密钥和 KISS 连接信息保存在系统安全存储中。调用服务时会使用相应凭据进行鉴权；AI 对话内容会发送给你配置的服务。\n\n学习词句和对话保存在本机数据库中。KISS 收藏词汇在设备上解密后导入；目前尚未提供完整数据备份、WebDAV 同步或恢复功能。',
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('知道了'),
+        ),
+      ],
+    ),
+  );
 }

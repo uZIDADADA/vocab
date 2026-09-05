@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:vocab/src/data/repositories/ai_settings_repository.dart';
@@ -9,21 +11,22 @@ import 'package:vocab/src/data/repositories/pronunciation_settings_repository.da
 import 'package:vocab/src/infrastructure/pronunciation/pronunciation_service.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   test('builds Merriam-Webster audio URLs using the documented rules', () {
     expect(
-      MerriamWebsterPronunciationService.audioUri('pajama02').path,
+      DictionaryPronunciationService.audioUri('pajama02').path,
       '/audio/prons/en/us/mp3/p/pajama02.mp3',
     );
     expect(
-      MerriamWebsterPronunciationService.audioUri('bixdod04').path,
+      DictionaryPronunciationService.audioUri('bixdod04').path,
       '/audio/prons/en/us/mp3/bix/bixdod04.mp3',
     );
     expect(
-      MerriamWebsterPronunciationService.audioUri('ggtest01').path,
+      DictionaryPronunciationService.audioUri('ggtest01').path,
       '/audio/prons/en/us/mp3/gg/ggtest01.mp3',
     );
     expect(
-      MerriamWebsterPronunciationService.audioUri('3d000001').path,
+      DictionaryPronunciationService.audioUri('3d000001').path,
       '/audio/prons/en/us/mp3/number/3d000001.mp3',
     );
   });
@@ -61,7 +64,8 @@ void main() {
       return http.Response.bytes([1, 2, 3, 4], 200);
     });
     final player = _FakeAudioPlayer();
-    final service = MerriamWebsterPronunciationService(
+    final service = DictionaryPronunciationService(
+      systemSpeech: _FakeSpeech(),
       settingsRepository: settings,
       client: client,
       player: player,
@@ -78,33 +82,151 @@ void main() {
     await service.dispose();
   });
 
-  test('requires a configured API key before the first lookup', () async {
-    final temporaryDirectory = await Directory.systemTemp.createTemp(
-      'vocab-pronunciation-no-key-',
-    );
-    addTearDown(() => temporaryDirectory.delete(recursive: true));
-    final client = MockClient((_) async => http.Response('', 500));
-    final service = MerriamWebsterPronunciationService(
-      settingsRepository: PronunciationSettingsRepository(
-        MemoryAiSecretStore(),
-      ),
-      client: client,
-      player: _FakeAudioPlayer(),
-      cacheDirectory: () async => temporaryDirectory,
-    );
+  test(
+    'no key uses system speech without HTTP or cache; key takes priority',
+    () async {
+      final directory = await Directory.systemTemp.createTemp('vocab-tts-');
+      addTearDown(() => directory.delete(recursive: true));
+      final secrets = MemoryAiSecretStore();
+      final settings = PronunciationSettingsRepository(secrets);
+      final speech = _FakeSpeech();
+      final requests = <Uri>[];
+      final service = DictionaryPronunciationService(
+        settingsRepository: settings,
+        systemSpeech: speech,
+        player: _FakeAudioPlayer(),
+        cacheDirectory: () async => directory,
+        client: MockClient((request) async {
+          requests.add(request.url);
+          if (request.url.host == 'www.dictionaryapi.com') {
+            return http.Response('[{"sound":{"audio":"test01"}}]', 200);
+          }
+          return http.Response.bytes([1], 200);
+        }),
+      );
+      addTearDown(service.dispose);
+      await service.play(' TEST ');
+      expect(speech.words, ['test']);
+      expect(requests, isEmpty);
+      expect(await directory.list().toList(), isEmpty);
+      await settings.saveApiKey('key');
+      await service.play('test');
+      await service.play('test');
+      expect(requests, hasLength(2));
+      expect(speech.words, ['test']);
+      await service.play('british', accent: PronunciationAccent.british);
+      expect(requests, hasLength(2));
+      expect(speech.accents.last, PronunciationAccent.british);
+      expect(speech.words.last, 'british');
+      await secrets.write('pronunciation.merriam_webster.api_key', '');
+      await service.play('test');
+      expect(speech.words, ['test', 'british', 'test']);
+      expect(requests, hasLength(2));
+    },
+  );
 
+  for (final status in [401, 429, 500, 200]) {
+    test(
+      'MW $status or missing recording falls back to system speech',
+      () async {
+        final directory = await Directory.systemTemp.createTemp(
+          'vocab-fallback-',
+        );
+        addTearDown(() => directory.delete(recursive: true));
+        final settings = PronunciationSettingsRepository(MemoryAiSecretStore());
+        await settings.saveApiKey('key');
+        final speech = _FakeSpeech();
+        final service = DictionaryPronunciationService(
+          settingsRepository: settings,
+          systemSpeech: speech,
+          player: _FakeAudioPlayer(),
+          cacheDirectory: () async => directory,
+          client: MockClient((request) async {
+            expect(request.url.host, 'www.dictionaryapi.com');
+            return http.Response('[]', status);
+          }),
+        );
+        addTearDown(service.dispose);
+        await service.play('hello');
+        expect(speech.words, ['hello']);
+      },
+    );
+  }
+
+  test('system speech selects English voice and awaits completion', () async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    const channel = MethodChannel('flutter_tts');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          if (call.method == 'getVoices') {
+            return [
+              {'name': 'Online', 'locale': 'en-US', 'network_required': '1'},
+              {'name': 'English', 'locale': 'en-US', 'network_required': '0'},
+            ];
+          }
+          return 1;
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+    final service = SystemPronunciationService();
+    await service.play('hello');
+    expect(calls.map((c) => c.method), [
+      'stop',
+      'getVoices',
+      'setVoice',
+      'awaitSpeakCompletion',
+      'speak',
+    ]);
+    expect(calls[2].arguments['name'], 'English');
+    expect(calls.last.arguments, 'hello');
+    await service.dispose();
+  });
+
+  test('missing English voice gives installation guidance', () async {
+    const channel = MethodChannel('flutter_tts');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          channel,
+          (call) async => call.method == 'getVoices' ? [] : 1,
+        );
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+    final service = SystemPronunciationService();
     await expectLater(
-      service.play('test'),
+      service.play('hello'),
       throwsA(
         isA<PronunciationException>().having(
-          (error) => error.message,
+          (e) => e.message,
           'message',
-          contains('API Key'),
+          contains('英文离线语音包'),
         ),
       ),
     );
     await service.dispose();
   });
+}
+
+class _FakeSpeech implements PronunciationService {
+  final words = <String>[];
+  final accents = <PronunciationAccent>[];
+  @override
+  Future<void> play(
+    String term, {
+    PronunciationAccent accent = PronunciationAccent.automatic,
+  }) async {
+    words.add(term);
+    accents.add(accent);
+  }
+
+  @override
+  Future<void> dispose() async {}
 }
 
 class _FakeAudioPlayer implements PronunciationAudioPlayer {

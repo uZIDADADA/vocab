@@ -202,5 +202,3 @@ class CircleIcon extends StatelessWidget {
     );
   }
 }
-
-void noop() {}

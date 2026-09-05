@@ -125,6 +125,9 @@ class ReviewQueueItem {
     required this.prompt,
     required this.answer,
     required this.label,
+    this.phonetic,
+    this.partOfSpeech,
+    this.example,
   });
 
   final String itemType;
@@ -132,4 +135,7 @@ class ReviewQueueItem {
   final String prompt;
   final String answer;
   final String label;
+  final String? phonetic;
+  final String? partOfSpeech;
+  final String? example;
 }

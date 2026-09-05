@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:crypto/crypto.dart' as hashes;
 import 'package:cryptography/cryptography.dart';
@@ -27,6 +28,11 @@ class KissWorkerSettings {
 abstract interface class KissVocabularyService {
   Future<List<ImportedVocabularyCandidate>> fetchWords(
     KissWorkerSettings settings,
+  );
+
+  Future<int> uploadWords(
+    KissWorkerSettings settings,
+    List<ImportedVocabularyCandidate> words,
   );
 
   void close();
@@ -57,6 +63,105 @@ class KissWorkerVocabularyService implements KissVocabularyService {
   Future<List<ImportedVocabularyCandidate>> fetchWords(
     KissWorkerSettings settings,
   ) async {
+    final record = await _exchange(settings, '{}', 0);
+    return parseWordBook(await _plaintext(record, settings));
+  }
+
+  Future<String> _plaintext(
+    Map<String, dynamic> record,
+    KissWorkerSettings settings,
+  ) async {
+    if (record['value'] == '{}') return '{}';
+    try {
+      return await decryptEnvelope(
+        record['value'] as String,
+        settings.encryptionPassphrase!,
+      );
+    } on SecretBoxAuthenticationError {
+      throw const KissWorkerException('解密失败，请检查加密口令是否正确。');
+    }
+  }
+
+  @override
+  Future<int> uploadWords(
+    KissWorkerSettings settings,
+    List<ImportedVocabularyCandidate> words,
+  ) async {
+    if (words.isEmpty) return 0;
+    var record = await _exchange(settings, '{}', 0);
+    for (var attempt = 0; attempt < 3; attempt++) {
+      final decoded = jsonDecode(await _plaintext(record, settings));
+      if (decoded is! Map<String, dynamic>) {
+        throw const KissWorkerException('云端生词本格式无法识别，未上传。');
+      }
+      final existing = decoded.keys
+          .map((key) => key.trim().toLowerCase())
+          .toSet();
+      var added = 0;
+      for (final word in words) {
+        final term = word.term.trim();
+        if (term.isEmpty || !existing.add(term.toLowerCase())) continue;
+        decoded[term] = {
+          'definition': word.definition,
+          'phonetic': word.phonetic ?? '',
+          'examples': word.examples,
+          'timestamp':
+              (word.sourceTimestamp ?? DateTime.now()).millisecondsSinceEpoch,
+        };
+        added++;
+      }
+      if (added == 0) return 0;
+      final timestamp = record['updateAt'];
+      if (timestamp is! int || timestamp < 0 || timestamp >= 9007199254740991) {
+        throw const KissWorkerException('云端版本无法识别，未上传。');
+      }
+      // Increment the observed version, rather than using the device clock.
+      // A concurrent newer server record is returned and merged on the next attempt.
+      final version = timestamp > 0 && timestamp < 100000000000
+          ? timestamp * 1000 + 1
+          : timestamp + 1;
+      final envelope = await encryptEnvelope(
+        jsonEncode(decoded),
+        settings.encryptionPassphrase!,
+      );
+      record = await _exchange(settings, envelope, version);
+      if (record['value'] == envelope) return added;
+    }
+    throw const KissWorkerException('云端词库正在变化，请稍后重新上传。');
+  }
+
+  static Future<String> encryptEnvelope(
+    String plaintext,
+    String passphrase,
+  ) async {
+    final random = Random.secure();
+    final salt = List<int>.generate(16, (_) => random.nextInt(256));
+    final key = await Pbkdf2(
+      macAlgorithm: Hmac.sha256(),
+      iterations: _iterations,
+      bits: 256,
+    ).deriveKey(secretKey: SecretKey(utf8.encode(passphrase)), nonce: salt);
+    final box = await AesGcm.with256bits().encrypt(
+      utf8.encode(plaintext),
+      secretKey: key,
+    );
+    return jsonEncode({
+      'encrypted': true,
+      'version': 1,
+      'alg': 'AES-GCM',
+      'kdf': 'PBKDF2-SHA-256',
+      'iterations': _iterations,
+      'salt': base64Encode(salt),
+      'iv': base64Encode(box.nonce),
+      'data': base64Encode([...box.cipherText, ...box.mac.bytes]),
+    });
+  }
+
+  Future<Map<String, dynamic>> _exchange(
+    KissWorkerSettings settings,
+    String value,
+    int updateAt,
+  ) async {
     if (!settings.isConfigured) {
       throw const KissWorkerException('请先完整配置同步地址、同步密钥和加密口令。');
     }
@@ -84,13 +189,13 @@ class KissWorkerVocabularyService implements KissVocabularyService {
             },
             body: jsonEncode({
               'key': _wordBookKey,
-              'value': '{}',
-              'updateAt': 0,
+              'value': value,
+              'updateAt': updateAt,
             }),
           )
           .timeout(const Duration(seconds: 30));
-    } on http.ClientException catch (error) {
-      throw KissWorkerException('KISS-Worker 请求失败：${error.message}');
+    } on http.ClientException {
+      throw const KissWorkerException('KISS-Worker 请求失败，请检查网络。');
     } on TimeoutException {
       throw const KissWorkerException('KISS-Worker 请求超时，请稍后重试。');
     } on FormatException {
@@ -110,11 +215,7 @@ class KissWorkerVocabularyService implements KissVocabularyService {
           record['value'] is! String) {
         throw const FormatException('Unexpected sync response');
       }
-      final plaintext = await decryptEnvelope(
-        record['value'] as String,
-        settings.encryptionPassphrase!,
-      );
-      return parseWordBook(plaintext);
+      return record;
     } on SecretBoxAuthenticationError {
       throw const KissWorkerException('解密失败，请检查加密口令是否正确。');
     } on KissWorkerException {

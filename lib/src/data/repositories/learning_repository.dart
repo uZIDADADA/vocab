@@ -89,6 +89,39 @@ class LearningRepository {
     );
   }
 
+  Stream<List<DateTime>> watchReviewDates() => _database
+      .select(_database.reviewEvents)
+      .watch()
+      .map((rows) => rows.map((row) => row.reviewedAt.toLocal()).toList());
+
+  static int streak(List<DateTime> dates, DateTime now) {
+    final days = dates.map((d) => DateTime(d.year, d.month, d.day)).toSet();
+    var day = DateTime(now.year, now.month, now.day);
+    if (!days.contains(day)) day = DateTime(day.year, day.month, day.day - 1);
+    var count = 0;
+    while (days.contains(day)) {
+      count++;
+      day = DateTime(day.year, day.month, day.day - 1);
+    }
+    return count;
+  }
+
+  Future<List<ImportedVocabularyCandidate>> wordsForUpload() async {
+    final rows = await _database.watchVocabulary().first;
+    return [
+      for (final row in rows)
+        if (!row.id.startsWith('demo-') &&
+            (row.source == '手动添加' || row.source == 'AI 对练'))
+          ImportedVocabularyCandidate(
+            term: row.term,
+            definition: row.definition,
+            sourceTimestamp: row.createdAt,
+            phonetic: _readContextText(row.sourceContext, 'phonetic'),
+            examples: [?_readContextText(row.sourceContext, 'example')],
+          ),
+    ];
+  }
+
   Future<void> addWord({
     required String term,
     required String definition,
@@ -150,6 +183,20 @@ class LearningRepository {
     );
   }
 
+  static String? _readContextText(String? sourceContext, String key) {
+    if (sourceContext == null) return null;
+    try {
+      final decoded = jsonDecode(sourceContext);
+      if (decoded is! Map<String, dynamic>) return null;
+      final phonetic = decoded[key];
+      return phonetic is String && phonetic.trim().isNotEmpty
+          ? phonetic.trim()
+          : null;
+    } on FormatException {
+      return null;
+    }
+  }
+
   Future<List<ReviewQueueItem>> getDueReviews() async {
     final results = await Future.wait([
       _database.getDueVocabulary(),
@@ -165,6 +212,9 @@ class LearningRepository {
           prompt: word.term,
           answer: word.definition,
           label: word.tag,
+          phonetic: _readContextText(word.sourceContext, 'phonetic'),
+          partOfSpeech: word.partOfSpeech,
+          example: _readContextText(word.sourceContext, 'example'),
         ),
       for (final pattern in patterns)
         ReviewQueueItem(
@@ -173,6 +223,7 @@ class LearningRepository {
           prompt: pattern.pattern,
           answer: pattern.meaning,
           label: pattern.category,
+          example: pattern.example,
         ),
     ];
   }

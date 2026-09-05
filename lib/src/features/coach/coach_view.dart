@@ -24,10 +24,10 @@ class CoachView extends StatefulWidget {
   final AiChatProvider provider;
 
   @override
-  State<CoachView> createState() => _CoachViewState();
+  State<CoachView> createState() => CoachViewState();
 }
 
-class _CoachViewState extends State<CoachView> {
+class CoachViewState extends State<CoachView> {
   late final CoachController _controller = CoachController(
     widget.settingsRepository,
     widget.conversationRepository,
@@ -65,7 +65,7 @@ class _CoachViewState extends State<CoachView> {
     });
   }
 
-  Future<bool> _openSettings() async {
+  Future<bool> openSettings() async {
     final saved = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -85,7 +85,7 @@ class _CoachViewState extends State<CoachView> {
     if (text.isEmpty || _controller.isSending) return;
 
     if (!_controller.settings.isConfigured) {
-      final saved = await _openSettings();
+      final saved = await openSettings();
       if (!saved || !_controller.settings.isConfigured) return;
     }
 
@@ -105,7 +105,7 @@ class _CoachViewState extends State<CoachView> {
 
   Future<void> _extractMessage(CoachMessage message) async {
     if (!_controller.settings.isConfigured) {
-      final saved = await _openSettings();
+      final saved = await openSettings();
       if (!saved) return;
     }
     final suggestions = await _controller.extractLearningItems(message);
@@ -212,7 +212,7 @@ class _CoachViewState extends State<CoachView> {
                       RoundActionButton(
                         icon: Icons.tune_rounded,
                         tooltip: 'AI 设置',
-                        onPressed: _openSettings,
+                        onPressed: openSettings,
                       ),
                     ],
                   ),
@@ -260,7 +260,7 @@ class _CoachViewState extends State<CoachView> {
             if (!_controller.isInitializing && !settings.isConfigured)
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-                child: _SetupCard(onPressed: _openSettings),
+                child: _SetupCard(onPressed: openSettings),
               ),
             Expanded(
               child: _Conversation(
