@@ -8,3 +8,23 @@ https://creativecommons.org/licenses/by/4.0/
 The optimized SQLite representation was distributed with Lexicor 0.2.0.
 Lexicor is Copyright (c) 2025 Puntbyte and licensed under the MIT License.
 https://github.com/puntbyte/lexicor
+
+Chinese definitions: ECDICT core subset (27,829 headwords)
+https://github.com/skywind3000/ECDICT
+Upstream revision: bc015ed2e24a7abef49fc6dbbb7fe32c1dadaf8b
+Upstream repository license: MIT; full notice in ECDICT-LICENSE.txt.
+
+This is a community-compiled dictionary, not an Oxford, Collins or Cambridge
+licensed dictionary. Upstream frequency and exam labels are selection metadata,
+not an attribution of the definitions to those publishers. Coverage and
+definitions may be incomplete, dated or incorrect; no AI translations are used.
+Chinese definitions are independent of WordNet's English senses, not aligned
+translations of those senses. Personal definitions are shown separately.
+
+Vocab selects BNC/FRQ top-20,000 or exam/oxford/collins-tagged entries with Han
+definitions and English headwords. Original Chinese text is preserved; literal
+newline escapes are decoded. Search keys are lowercased. Reverse lookup indexes
+Han sequences (excluding bracketed labels); exact matches precede prefix matches.
+The database excludes audio, English definitions and other redundant fields.
+Reproduce using tool/build_bilingual_dictionary.py; source and asset checksums,
+counts and selection rules are recorded in ecdict-core-v1.manifest.json.

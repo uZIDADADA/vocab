@@ -11,11 +11,24 @@ class DictionaryEntry {
     required this.term,
     required this.senses,
     required this.source,
+    this.chineseDefinition,
+    this.chineseSource,
+    this.chineseHeadword,
   });
 
   final String term;
   final List<DictionarySense> senses;
   final String source;
+  final String? chineseDefinition;
+  final String? chineseSource;
+  final String? chineseHeadword;
+}
+
+class DictionaryMatch {
+  const DictionaryMatch({required this.term, required this.chineseDefinition});
+
+  final String term;
+  final String chineseDefinition;
 }
 
 class DictionarySense {
@@ -33,6 +46,8 @@ class DictionarySense {
 abstract interface class DictionaryService {
   Future<DictionaryEntry?> lookup(String term);
 
+  Future<List<DictionaryMatch>> searchChinese(String query);
+
   Future<void> close();
 }
 
@@ -46,6 +61,9 @@ class WordNetDictionaryService implements DictionaryService {
 
   final Future<Directory> Function() _supportDirectory;
   Future<Database>? _databaseFuture;
+
+  @override
+  Future<List<DictionaryMatch>> searchChinese(String query) async => const [];
 
   @override
   Future<DictionaryEntry?> lookup(String term) async {

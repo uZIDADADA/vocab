@@ -150,7 +150,7 @@ class LearningRepository {
     required String source,
     String? example,
   }) async {
-    final words = await watchWords(query: term).first;
+    final words = await _database.getVocabulary(query: term);
     for (final word in words) {
       if (word.term.trim().toLowerCase() == term.trim().toLowerCase()) {
         if (!word.isFavorite) {

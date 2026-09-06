@@ -151,30 +151,45 @@ class _LibraryViewState extends State<LibraryView> {
   }
 
   Future<void> _showAddDialog() async {
-    final primaryController = TextEditingController();
-    final secondaryController = TextEditingController();
+    var primary = '';
+    var secondary = '';
+    var example = '';
     final isWord = widget.selectedSegment == 0;
 
     final shouldSave = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
+        scrollable: true,
         title: Text(isWord ? '添加单词' : '添加句式'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
-              controller: primaryController,
               autofocus: true,
               textCapitalization: TextCapitalization.sentences,
               decoration: InputDecoration(labelText: isWord ? '单词或短语' : '英文句式'),
+              onChanged: (value) => primary = value,
             ),
             const SizedBox(height: 12),
             TextField(
-              controller: secondaryController,
               decoration: const InputDecoration(labelText: '中文释义'),
               minLines: 1,
               maxLines: 3,
+              onChanged: (value) => secondary = value,
             ),
+            if (!isWord) ...[
+              const SizedBox(height: 12),
+              TextField(
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  labelText: '英文例句（可选）',
+                  hintText: '例如：What I find most useful is daily practice.',
+                ),
+                minLines: 1,
+                maxLines: 3,
+                onChanged: (value) => example = value,
+              ),
+            ],
           ],
         ),
         actions: [
@@ -185,8 +200,7 @@ class _LibraryViewState extends State<LibraryView> {
           FilledButton(
             onPressed: () {
               final valid =
-                  primaryController.text.trim().isNotEmpty &&
-                  secondaryController.text.trim().isNotEmpty;
+                  primary.trim().isNotEmpty && secondary.trim().isNotEmpty;
               if (valid) Navigator.pop(context, true);
             },
             child: const Text('保存'),
@@ -197,14 +211,12 @@ class _LibraryViewState extends State<LibraryView> {
 
     if (shouldSave == true) {
       if (isWord) {
-        await widget.repository.addWord(
-          term: primaryController.text,
-          definition: secondaryController.text,
-        );
+        await widget.repository.addWord(term: primary, definition: secondary);
       } else {
         await widget.repository.addPattern(
-          pattern: primaryController.text,
-          meaning: secondaryController.text,
+          pattern: primary,
+          meaning: secondary,
+          example: example,
         );
       }
       if (mounted) {
@@ -213,9 +225,6 @@ class _LibraryViewState extends State<LibraryView> {
         );
       }
     }
-
-    primaryController.dispose();
-    secondaryController.dispose();
   }
 }
 
@@ -337,6 +346,7 @@ class _LibraryContent extends StatelessWidget {
                   iconColor: _accentColor(index + 1),
                   title: item.pattern,
                   subtitle: item.meaning,
+                  example: item.example,
                   tag: item.category,
                   tagColor: _softColor(index + 1),
                   mastery: item.mastery,
@@ -506,6 +516,7 @@ class _LibraryCard extends StatelessWidget {
     required this.accent,
     required this.isFavorite,
     required this.onFavorite,
+    this.example,
     this.showAudio = false,
     this.isAudioBusy = false,
     this.onAudio,
@@ -516,6 +527,7 @@ class _LibraryCard extends StatelessWidget {
   final Color iconColor;
   final String title;
   final String subtitle;
+  final String? example;
   final String tag;
   final Color tagColor;
   final int mastery;
@@ -539,6 +551,12 @@ class _LibraryCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 SelectableText(subtitle),
+                if (example?.isNotEmpty == true) ...[
+                  const SizedBox(height: 16),
+                  Text('例句', style: Theme.of(context).textTheme.labelLarge),
+                  const SizedBox(height: 6),
+                  SelectableText(example!),
+                ],
                 const SizedBox(height: 16),
                 Text('$tag · 掌握度 $mastery/5'),
               ],
@@ -607,6 +625,18 @@ class _LibraryCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 5),
                 Text(subtitle, style: Theme.of(context).textTheme.bodyMedium),
+                if (example?.isNotEmpty == true) ...[
+                  const SizedBox(height: 5),
+                  Text(
+                    '例句：${example!}',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: VocabColors.ink,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 10),
                 Row(
                   children: [

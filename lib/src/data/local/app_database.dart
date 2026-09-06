@@ -215,6 +215,7 @@ class AppDatabase extends _$AppDatabase {
       if (details.wasCreated) {
         await seedDemoData();
       }
+      await _backfillDemoPatternExamples();
     },
   );
 
@@ -250,6 +251,15 @@ class AppDatabase extends _$AppDatabase {
   }
 
   Stream<List<VocabularyEntry>> watchVocabulary({String query = ''}) {
+    return _vocabularyQuery(query).watch();
+  }
+
+  Future<List<VocabularyEntry>> getVocabulary({String query = ''}) {
+    return _vocabularyQuery(query).get();
+  }
+
+  SimpleSelectStatement<$VocabularyEntriesTable, VocabularyEntry>
+  _vocabularyQuery(String query) {
     final normalized = query.trim();
     final statement = select(vocabularyEntries)
       ..where((row) {
@@ -265,7 +275,7 @@ class AppDatabase extends _$AppDatabase {
         (row) => OrderingTerm.desc(row.isFavorite),
         (row) => OrderingTerm.desc(row.updatedAt),
       ]);
-    return statement.watch();
+    return statement;
   }
 
   Stream<List<SentencePattern>> watchSentencePatterns({String query = ''}) {
@@ -700,6 +710,9 @@ class AppDatabase extends _$AppDatabase {
           pattern: 'What I find most useful is …',
           meaning: '我觉得最有用的是……',
           category: const Value('表达观点'),
+          example: const Value(
+            'What I find most useful is the chance to practice every day.',
+          ),
           mastery: const Value(2),
           reviewDueAt: Value(now),
           createdAt: now,
@@ -710,6 +723,9 @@ class AppDatabase extends _$AppDatabase {
           pattern: 'I used to think … but now I realize …',
           meaning: '我过去认为……但现在我意识到……',
           category: const Value('个人成长'),
+          example: const Value(
+            'I used to think fluency meant speaking fast, but now I realize clarity matters more.',
+          ),
           mastery: const Value(3),
           reviewDueAt: Value(now.add(const Duration(days: 1))),
           createdAt: now,
@@ -720,6 +736,9 @@ class AppDatabase extends _$AppDatabase {
           pattern: 'If I had to choose, I would …',
           meaning: '如果一定要选，我会……',
           category: const Value('做出选择'),
+          example: const Value(
+            'If I had to choose, I would spend more time listening.',
+          ),
           mastery: const Value(4),
           reviewDueAt: Value(now.add(const Duration(days: 3))),
           createdAt: now,
@@ -739,6 +758,27 @@ class AppDatabase extends _$AppDatabase {
           ),
       ]);
     });
+  }
+
+  Future<void> _backfillDemoPatternExamples() async {
+    final patternTable = await customSelect(
+      "SELECT name FROM sqlite_master "
+      "WHERE type = 'table' AND name = 'sentence_patterns'",
+    ).get();
+    if (patternTable.isEmpty) return;
+
+    const examples = {
+      'demo-pattern-useful':
+          'What I find most useful is the chance to practice every day.',
+      'demo-pattern-realize': 'I used to think fluency meant speaking fast, but now I realize clarity matters more.',
+      'demo-pattern-choose':
+          'If I had to choose, I would spend more time listening.',
+    };
+    for (final entry in examples.entries) {
+      await (update(sentencePatterns)
+            ..where((row) => row.id.equals(entry.key) & row.example.isNull()))
+          .write(SentencePatternsCompanion(example: Value(entry.value)));
+    }
   }
 }
 

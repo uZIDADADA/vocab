@@ -68,6 +68,8 @@ flutter:
   assets:
     - assets/dictionary/oewn-2025-v2.3.2.sqlite.gz
     - assets/dictionary/NOTICE.txt
+    - assets/dictionary/ecdict-core-v1.sqlite.gz
+    - assets/dictionary/ECDICT-LICENSE.txt
 
   # To add assets to your application, add an assets section, like this:
   # assets:

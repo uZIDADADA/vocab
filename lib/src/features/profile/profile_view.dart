@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../data/repositories/learning_repository.dart';
 import '../../data/repositories/kiss_worker_settings_repository.dart';
@@ -825,7 +826,7 @@ class _MoreSettingsCard extends StatelessWidget {
           _SettingRow(
             icon: Icons.menu_book_outlined,
             label: '离线词典',
-            value: 'WordNet 2025',
+            value: '英汉双语',
             onTap: () => _showDictionaryLicense(context),
           ),
           Divider(height: 1, indent: 54),
@@ -846,12 +847,31 @@ void _showDictionaryLicense(BuildContext context) {
     context: context,
     builder: (context) => AlertDialog(
       title: const Text('离线词典来源'),
-      content: const SingleChildScrollView(
-        child: Text(
-          '英文释义来自 Open English WordNet 2025（v2.3.2），'
-          '以 Creative Commons Attribution 4.0 International（CC BY 4.0）'
-          '许可发布。\n\n词典数据库保存在本机，查询无需网络或 API Key。'
-          'Open English WordNet 项目：https://en-word.net/',
+      content: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '中文释义：ECDICT 开放词典常用词子集（27,829 个词条），'
+              '上游仓库以 MIT 许可发布。来源：https://github.com/skywind3000/ECDICT\n\n'
+              '英文释义：Open English WordNet 2025（v2.3.2），CC BY 4.0。'
+              '来源：https://en-word.net/\n\n'
+              '全部在本机查询，无需网络或 API Key。中文搜索按中文释义匹配英文词，'
+              '不翻译整句；未收录的中文释义会明确提示。\n\n'
+              'ECDICT 为社区汇编词典，可能存在遗漏或错误，并非出版社审校词典。'
+              '中文释义与 WordNet 英文词义分别展示，不作逐条对应；个人释义保留独立显示。',
+            ),
+            const SizedBox(height: 16),
+            FutureBuilder<String>(
+              future: rootBundle.loadString(
+                'assets/dictionary/ECDICT-LICENSE.txt',
+              ),
+              builder: (context, snapshot) => Text(
+                snapshot.data ?? 'ECDICT MIT 许可声明加载中…',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          ],
         ),
       ),
       actions: [

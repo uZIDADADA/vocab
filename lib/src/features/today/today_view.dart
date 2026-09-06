@@ -121,6 +121,7 @@ class _DictionarySearchState extends State<_DictionarySearch> {
   final _controller = TextEditingController();
   Timer? _debounce;
   DictionaryEntry? _entry;
+  List<DictionaryMatch> _matches = const [];
   String? _message;
   bool _isLoading = false;
   bool _isSpeaking = false;
@@ -134,16 +135,20 @@ class _DictionarySearchState extends State<_DictionarySearch> {
   }
 
   void _onChanged(String value) {
-    setState(() {});
     _debounce?.cancel();
+    _clearResult();
     if (value.trim().isEmpty) {
-      _clearResult();
+      return;
+    }
+    if (_controller.value.composing.isValid &&
+        !_controller.value.composing.isCollapsed) {
       return;
     }
     _debounce = Timer(const Duration(milliseconds: 450), () => _lookup(value));
   }
 
   void _clear() {
+    _debounce?.cancel();
     _controller.clear();
     _clearResult();
   }
@@ -153,6 +158,7 @@ class _DictionarySearchState extends State<_DictionarySearch> {
     if (!mounted) return;
     setState(() {
       _entry = null;
+      _matches = const [];
       _message = null;
       _isLoading = false;
     });
@@ -161,26 +167,40 @@ class _DictionarySearchState extends State<_DictionarySearch> {
   Future<void> _lookup(String rawTerm) async {
     _debounce?.cancel();
     final term = rawTerm.trim();
+    final request = ++_requestVersion;
     if (term.isEmpty) {
       _clearResult();
       return;
     }
-    if (!RegExp(r"^[A-Za-z][A-Za-z '\-]*$").hasMatch(term)) {
+    final isChinese = RegExp(r'^[\u3400-\u9fff]+$').hasMatch(term);
+    if (term.length > (isChinese ? 40 : 80) ||
+        (!isChinese && !RegExp(r"^[A-Za-z][A-Za-z '\-]*$").hasMatch(term))) {
       setState(() {
         _entry = null;
-        _message = '请输入英文单词或短语';
+        _matches = const [];
+        _message = '请输入中文词语或英文单词、短语';
         _isLoading = false;
       });
       return;
     }
 
-    final request = ++_requestVersion;
     setState(() {
       _entry = null;
+      _matches = const [];
       _message = null;
       _isLoading = true;
     });
     try {
+      if (isChinese) {
+        final matches = await widget.dictionaryService.searchChinese(term);
+        if (!mounted || request != _requestVersion) return;
+        setState(() {
+          _matches = matches;
+          _message = matches.isEmpty ? '常用词库暂未找到“$term”，试试更短的中文词语或英文单词' : null;
+          _isLoading = false;
+        });
+        return;
+      }
       final entry = await widget.dictionaryService.lookup(term);
       if (!mounted || request != _requestVersion) return;
       setState(() {
@@ -227,7 +247,7 @@ class _DictionarySearchState extends State<_DictionarySearch> {
           onChanged: _onChanged,
           onSubmitted: _lookup,
           decoration: InputDecoration(
-            hintText: '搜索英文单词',
+            hintText: '搜索中文或英文单词',
             prefixIcon: const Icon(Icons.search_rounded),
             suffixIcon: _controller.text.isEmpty
                 ? null
@@ -265,6 +285,42 @@ class _DictionarySearchState extends State<_DictionarySearch> {
                 _message!,
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
+            ),
+          ),
+        ],
+        if (_matches.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          SoftCard(
+            key: const Key('home-dictionary-candidates'),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '选择英文词，查看释义与发音',
+                  style: Theme.of(context).textTheme.labelLarge,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'ECDICT 常用词库 · ${_matches.length == 20 ? '前 20' : _matches.length} 个结果',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                for (final match in _matches)
+                  ListTile(
+                    key: ValueKey('dictionary-candidate-${match.term}'),
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(match.term),
+                    subtitle: Text(
+                      match.chineseDefinition.replaceAll('\n', '；'),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () {
+                      _controller.text = match.term;
+                      _lookup(match.term);
+                    },
+                  ),
+              ],
             ),
           ),
         ],
@@ -341,12 +397,14 @@ class _DictionaryResultCard extends StatelessWidget {
                       if (saved != null) {
                         await repository.toggleWordFavorite(saved);
                       } else {
-                        final definition = entry.senses
-                            .map(
-                              (sense) =>
-                                  '${sense.partOfSpeech} ${sense.definition}',
-                            )
-                            .join('\n');
+                        final definition =
+                            entry.chineseDefinition ??
+                            entry.senses
+                                .map(
+                                  (sense) =>
+                                      '${sense.partOfSpeech} ${sense.definition}',
+                                )
+                                .join('\n');
                         final parts = entry.senses
                             .map((sense) => sense.partOfSpeech)
                             .toSet()
@@ -389,7 +447,8 @@ class _DictionaryResultCard extends StatelessWidget {
               ),
               const SizedBox(height: 10),
               if (saved != null &&
-                  !saved.source.contains('Open English WordNet')) ...[
+                  !saved.source.contains('Open English WordNet') &&
+                  !saved.source.contains('ECDICT')) ...[
                 Text('我的释义', style: Theme.of(context).textTheme.labelLarge),
                 const SizedBox(height: 3),
                 Text(
@@ -397,6 +456,34 @@ class _DictionaryResultCard extends StatelessWidget {
                   style: Theme.of(context).textTheme.bodyLarge,
                 ),
                 const SizedBox(height: 12),
+              ],
+              if (entry.chineseDefinition case final chinese?) ...[
+                Text(
+                  '中文释义 · ECDICT',
+                  style: Theme.of(context).textTheme.labelLarge,
+                ),
+                if (entry.chineseHeadword != null &&
+                    entry.chineseHeadword != entry.term)
+                  Text(
+                    '词形原词：${entry.chineseHeadword}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                const SizedBox(height: 4),
+                Text(chinese, style: Theme.of(context).textTheme.bodyLarge),
+                const SizedBox(height: 12),
+              ] else ...[
+                Text(
+                  '常用词库暂无中文释义',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 12),
+              ],
+              if (entry.senses.isNotEmpty) ...[
+                Text(
+                  '英文释义 · WordNet',
+                  style: Theme.of(context).textTheme.labelLarge,
+                ),
+                const SizedBox(height: 4),
               ],
               for (var index = 0; index < entry.senses.length; index++) ...[
                 Text.rich(

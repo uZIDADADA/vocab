@@ -1,0 +1,13 @@
+{
+  "source_url": "https://raw.githubusercontent.com/skywind3000/ECDICT/bc015ed2e24a7abef49fc6dbbb7fe32c1dadaf8b/ecdict.csv",
+  "source_sha256": "1a6947e04785db63613a92e14903cdae7954f7e84860b10e68e5c7cbb3f9c3cf",
+  "source_commit": "bc015ed2e24a7abef49fc6dbbb7fe32c1dadaf8b",
+  "selection": "BNC or FRQ rank <= 20000, or upstream exam/oxford/collins tag; English headword and Han definition required",
+  "normalization": "Lowercase lookup keys; retain upstream Chinese definitions; convert literal newline escapes; index Han runs excluding bracketed domain labels",
+  "entries": 27829,
+  "chinese_index_rows": 100207,
+  "forms": 27504,
+  "compressed_bytes": 2265815,
+  "uncompressed_bytes": 4517888,
+  "asset_sha256": "426c2a9b4ce2944f5fac867a70829618ea08910c6b5635c1029aa30ea226f1e8"
+}

@@ -9,6 +9,7 @@ import 'data/repositories/pronunciation_settings_repository.dart';
 import 'features/home/home_screen.dart';
 import 'infrastructure/ai/ai_chat_provider.dart';
 import 'infrastructure/dictionary/dictionary_service.dart';
+import 'infrastructure/dictionary/bilingual_dictionary_service.dart';
 import 'infrastructure/pronunciation/pronunciation_service.dart';
 import 'infrastructure/sync/kiss_worker_vocabulary_service.dart';
 import 'theme/vocab_theme.dart';
@@ -56,7 +57,7 @@ class _VocabAppState extends State<VocabApp> {
       widget.aiChatProvider ?? OpenAiCompatibleChatProvider();
   late final bool _ownsDictionaryService = widget.dictionaryService == null;
   late final DictionaryService _dictionaryService =
-      widget.dictionaryService ?? WordNetDictionaryService();
+      widget.dictionaryService ?? BilingualDictionaryService();
   late final bool _ownsPronunciationService =
       widget.pronunciationService == null;
   late final PronunciationService _pronunciationService =

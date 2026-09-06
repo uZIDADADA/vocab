@@ -344,6 +344,39 @@ void main() {
     await tester.tap(find.byKey(const Key('metric-total-patterns')));
     await _pumpDatabaseFrames(tester);
     expect(find.text('What I find most useful is …'), findsOneWidget);
+    await tester.tap(find.byTooltip('添加句式'));
+    await tester.pumpAndSettle();
+    expect(find.text('英文例句（可选）'), findsOneWidget);
+    await tester.enterText(
+      find.widgetWithText(TextField, '英文句式'),
+      'What helps me most is …',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, '中文释义'),
+      '对我帮助最大的是……',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, '英文例句（可选）'),
+      'What helps me most is practicing every day.',
+    );
+    await tester.tap(find.text('保存'));
+    await _pumpDatabaseFrames(tester);
+    await tester.pumpAndSettle();
+    expect(
+      find.text('例句：What helps me most is practicing every day.'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('What helps me most is …'));
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.text('What helps me most is practicing every day.'),
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('关闭'));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.text('今日'));
     await tester.pump();
@@ -512,6 +545,9 @@ class _FakePronunciationService implements PronunciationService {
 
 class _FakeDictionaryService implements DictionaryService {
   String? lastTerm;
+
+  @override
+  Future<List<DictionaryMatch>> searchChinese(String query) async => const [];
 
   @override
   Future<DictionaryEntry?> lookup(String term) async {
