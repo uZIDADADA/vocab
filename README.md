@@ -47,6 +47,40 @@ Google Play so Play can deliver the device-specific APK automatically.
 See [docs/architecture.md](docs/architecture.md) for the planned system design.
 Logo explorations live in [docs/design/logo-candidates](docs/design/logo-candidates).
 
+## iOS release builds
+
+The iOS runner targets iOS 15.0 or later with bundle ID
+`io.github.uzidadada.vocab`. On a Mac, install full Xcode with iOS platform
+support and CocoaPods (`brew install cocoapods`). Select Xcode's command-line
+tools and complete its first-launch setup. Flutter and `pod` must be on PATH;
+no additional global environment variables are required.
+
+Build an unsigned device Release app with one native compile job:
+
+```bash
+./tool/build_ios_release.sh
+```
+
+This runs from the terminal without launching Xcode or a simulator. The output
+is `build/ios/Release-iphoneos/Runner.app`; it requires signing before it can
+be installed on an iPhone. `VOCAB_IOS_BUILD_JOBS=2` optionally increases native
+build concurrency. The script accepts Flutter build options such as
+`--build-number=2` or `--build-name=0.1.1`. Builds still require memory for the compiler; one job limits
+concurrency, not total memory use.
+
+To export a signed IPA, first open `ios/Runner.xcworkspace` in Xcode and choose
+your Team under **Runner → Signing & Capabilities**, with automatic signing.
+Use an available bundle ID for that Team. Then run `flutter build ipa --release`
+for App Store/TestFlight, or `flutter build ipa --release --export-method development`
+for an appropriate development provisioning profile. IPA export depends on
+your Apple account and signing assets; the unsigned build does not configure
+these or upload anything. Standard Flutter IPA builds use Xcode's default
+concurrency, so avoid other heavy tasks during export on a small-memory Mac.
+
+iOS Keychain configuration is included for secure storage. Database, dictionary,
+speech and network features still require iPhone validation. Daily reminders
+currently have an Android-only implementation and show as unsupported on iOS.
+
 ## AI text coach
 
 The text coach includes presets for Gemini, DeepSeek, Zhipu BigModel, and Kimi,
@@ -108,4 +142,4 @@ invented. No Free Dictionary API requests remain.
 
 ## License
 
-Not selected yet. The repository remains private during the self-test phase.
+Licensed under the [Apache License 2.0](LICENSE).
