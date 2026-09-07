@@ -96,26 +96,32 @@ class ImportedVocabularyCandidate {
   const ImportedVocabularyCandidate({
     required this.term,
     required this.definition,
+    this.partOfSpeech,
     this.phonetic,
     this.examples = const [],
     this.sourceTimestamp,
+    this.dictionarySource,
   });
 
   final String term;
   final String definition;
+  final String? partOfSpeech;
   final String? phonetic;
   final List<String> examples;
   final DateTime? sourceTimestamp;
+  final String? dictionarySource;
 }
 
 class VocabularyImportResult {
   const VocabularyImportResult({
     required this.importedCount,
     required this.skippedCount,
+    this.updatedCount = 0,
   });
 
   final int importedCount;
   final int skippedCount;
+  final int updatedCount;
 }
 
 class ReviewQueueItem {

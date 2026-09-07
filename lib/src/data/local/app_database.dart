@@ -392,6 +392,35 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
+  Future<VocabularyEntry?> getActiveVocabularyByTerm(String term) {
+    final normalized = term.trim().toLowerCase();
+    if (normalized.isEmpty) return Future.value(null);
+    return (select(vocabularyEntries)
+          ..where(
+            (row) =>
+                row.deletedAt.isNull() & row.term.lower().equals(normalized),
+          )
+          ..limit(1))
+        .getSingleOrNull();
+  }
+
+  Future<void> updateVocabularyDetails({
+    required String id,
+    required String definition,
+    String? partOfSpeech,
+    String? sourceContext,
+  }) async {
+    await (update(vocabularyEntries)..where((row) => row.id.equals(id))).write(
+      VocabularyEntriesCompanion(
+        definition: Value(definition.trim()),
+        partOfSpeech: Value(_emptyToNull(partOfSpeech)),
+        sourceContext: Value(_emptyToNull(sourceContext)),
+        isDirty: const Value(true),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
   Future<void> addSentencePattern({
     required String id,
     required String pattern,

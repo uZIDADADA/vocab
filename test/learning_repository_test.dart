@@ -1,10 +1,12 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vocab/src/application/import/vocabulary_import_coordinator.dart';
 import 'package:vocab/src/data/local/app_database.dart';
 import 'package:vocab/src/data/repositories/ai_settings_repository.dart';
 import 'package:vocab/src/data/repositories/learning_repository.dart';
 import 'package:vocab/src/domain/coach_models.dart';
 import 'package:vocab/src/domain/learning_models.dart';
+import 'package:vocab/src/infrastructure/dictionary/dictionary_service.dart';
 
 void main() {
   late AppDatabase database;
@@ -176,6 +178,61 @@ void main() {
     expect(imported.tag, '浏览器收藏');
   });
 
+  test('fills missing KISS definitions from the offline dictionary', () async {
+    await repository.importVocabulary(const [
+      ImportedVocabularyCandidate(term: 'artifact', definition: ''),
+    ]);
+    expect(
+      (await repository.watchWords(query: 'artifact').first).single.definition,
+      '待补充释义',
+    );
+
+    final coordinator = VocabularyImportCoordinator(
+      repository,
+      const _DictionaryStub(),
+    );
+    final result = await coordinator.repairImportedDefinitions();
+    final repaired =
+        (await repository.watchWords(query: 'artifact').first).single;
+
+    expect(result.updatedCount, 1);
+    expect(result.importedCount, 0);
+    expect(repaired.definition, '人工制品；产物');
+    expect(repaired.partOfSpeech, 'n.');
+    expect(
+      (await repository.getDueReviews())
+          .singleWhere((item) => item.prompt == 'artifact')
+          .example,
+      'This file is a build artifact.',
+    );
+  });
+
+  test(
+    'dictionary enrichment never overwrites an existing definition',
+    () async {
+      const candidate = ImportedVocabularyCandidate(
+        term: 'artifact',
+        definition: '我自己的释义',
+      );
+      await repository.importVocabulary(const [candidate]);
+      final coordinator = VocabularyImportCoordinator(
+        repository,
+        const _DictionaryStub(),
+      );
+
+      final result = await coordinator.importVocabulary(const [candidate]);
+
+      expect(result.updatedCount, 0);
+      expect(result.skippedCount, 1);
+      expect(
+        (await repository.watchWords(query: 'artifact').first)
+            .single
+            .definition,
+        '我自己的释义',
+      );
+    },
+  );
+
   test(
     'saves confirmed AI suggestions independently of chat history',
     () async {
@@ -209,4 +266,28 @@ void main() {
       );
     },
   );
+}
+
+class _DictionaryStub implements DictionaryService {
+  const _DictionaryStub();
+
+  @override
+  Future<DictionaryEntry?> lookup(String term) async => DictionaryEntry(
+    term: term,
+    source: 'ECDICT 常用词库 · MIT / Open English WordNet 2025 · CC BY 4.0',
+    chineseDefinition: '人工制品；产物',
+    senses: const [
+      DictionarySense(
+        partOfSpeech: 'n.',
+        definition: 'an object made by a person',
+        example: 'This file is a build artifact.',
+      ),
+    ],
+  );
+
+  @override
+  Future<List<DictionaryMatch>> searchChinese(String query) async => const [];
+
+  @override
+  Future<void> close() async {}
 }

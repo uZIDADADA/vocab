@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../../application/import/vocabulary_import_coordinator.dart';
 import '../../data/repositories/ai_settings_repository.dart';
 import '../../data/repositories/conversation_repository.dart';
 import '../../data/repositories/kiss_worker_settings_repository.dart';
@@ -22,6 +25,7 @@ class HomeScreen extends StatefulWidget {
     required this.aiSettingsRepository,
     required this.aiChatProvider,
     required this.dictionaryService,
+    required this.vocabularyImportCoordinator,
     required this.conversationRepository,
     required this.pronunciationSettingsRepository,
     required this.pronunciationService,
@@ -34,6 +38,7 @@ class HomeScreen extends StatefulWidget {
   final AiSettingsRepository aiSettingsRepository;
   final AiChatProvider aiChatProvider;
   final DictionaryService dictionaryService;
+  final VocabularyImportCoordinator vocabularyImportCoordinator;
   final ConversationRepository conversationRepository;
   final PronunciationSettingsRepository pronunciationSettingsRepository;
   final PronunciationService pronunciationService;
@@ -49,6 +54,21 @@ class _HomeScreenState extends State<HomeScreen> {
   int _tabIndex = 0;
   int _librarySegment = 0;
   int _libraryNavigationVersion = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_repairImportedDefinitions());
+  }
+
+  Future<void> _repairImportedDefinitions() async {
+    try {
+      await widget.vocabularyImportCoordinator.repairImportedDefinitions();
+    } on Object {
+      // This is background, best-effort enrichment. The explicit KISS import
+      // path still reports actionable failures to the user.
+    }
+  }
 
   void _selectTab(int index) {
     if (_tabIndex == index) return;
@@ -138,6 +158,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   widget.pronunciationSettingsRepository,
               kissWorkerSettingsRepository: widget.kissWorkerSettingsRepository,
               kissVocabularyService: widget.kissVocabularyService,
+              vocabularyImportCoordinator: widget.vocabularyImportCoordinator,
             ),
           ],
         ),
@@ -235,37 +256,39 @@ class _NavigationDestinationButton extends StatelessWidget {
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(20),
-          child: AnimatedContainer(
+          splashFactory: NoSplash.splashFactory,
+          overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+          child: DecoratedBox(
             key: Key('bottom-navigation-item-$index'),
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOutCubic,
             decoration: BoxDecoration(
               color: selected ? VocabColors.lime : Colors.transparent,
               borderRadius: BorderRadius.circular(20),
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  selected ? destination.selectedIcon : destination.icon,
-                  size: 24,
-                  color: selected ? VocabColors.ink : VocabColors.muted,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  destination.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.fade,
-                  softWrap: false,
-                  style: TextStyle(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    selected ? destination.selectedIcon : destination.icon,
+                    size: 24,
                     color: selected ? VocabColors.ink : VocabColors.muted,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    height: 1.1,
                   ),
-                ),
-              ],
+                  const SizedBox(height: 2),
+                  Text(
+                    destination.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.fade,
+                    softWrap: false,
+                    style: TextStyle(
+                      color: selected ? VocabColors.ink : VocabColors.muted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      height: 1.1,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

@@ -187,6 +187,81 @@ void main() {
     await service.dispose();
   });
 
+  test('British speech can use a system-provided network voice', () async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    const channel = MethodChannel('flutter_tts');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          if (call.method == 'getVoices') {
+            return [
+              {
+                'name': 'US offline',
+                'locale': 'en-US',
+                'network_required': '0',
+              },
+              {
+                'name': 'UK network',
+                'locale': 'en-GB',
+                'network_required': '1',
+              },
+            ];
+          }
+          return 1;
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+    final service = SystemPronunciationService();
+    await service.play('schedule', accent: PronunciationAccent.british);
+    final setVoice = calls.singleWhere((call) => call.method == 'setVoice');
+    expect(setVoice.arguments['name'], 'UK network');
+    expect(calls.last.method, 'speak');
+    await service.dispose();
+  });
+
+  test('British speech does not substitute an American voice', () async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    const channel = MethodChannel('flutter_tts');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          if (call.method == 'getVoices') {
+            return [
+              {
+                'name': 'US offline',
+                'locale': 'en-US',
+                'network_required': '0',
+              },
+            ];
+          }
+          return 1;
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+    final service = SystemPronunciationService();
+    await expectLater(
+      service.play('schedule', accent: PronunciationAccent.british),
+      throwsA(
+        isA<PronunciationException>().having(
+          (error) => error.message,
+          'message',
+          contains('英式英文离线语音包'),
+        ),
+      ),
+    );
+    expect(calls.where((call) => call.method == 'setVoice'), isEmpty);
+    expect(calls.where((call) => call.method == 'speak'), isEmpty);
+    await service.dispose();
+  });
+
   test('missing English voice gives installation guidance', () async {
     const channel = MethodChannel('flutter_tts');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger

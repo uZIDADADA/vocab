@@ -112,6 +112,18 @@ class StatusPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final labelText = Text(
+      label,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      softWrap: false,
+      style: TextStyle(
+        color: foreground,
+        fontSize: 11,
+        fontWeight: FontWeight.w800,
+      ),
+    );
+
     return DecoratedBox(
       decoration: BoxDecoration(
         color: color,
@@ -119,22 +131,26 @@ class StatusPill extends StatelessWidget {
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (icon != null) ...[
-              Icon(icon, color: foreground, size: 14),
-              const SizedBox(width: 5),
-            ],
-            Text(
-              label,
-              style: TextStyle(
-                color: foreground,
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ],
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final iconWidth = icon == null ? 0.0 : 19.0;
+            final maxLabelWidth = constraints.maxWidth.isFinite
+                ? (constraints.maxWidth - iconWidth).clamp(0.0, double.infinity)
+                : double.infinity;
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (icon != null) ...[
+                  Icon(icon, color: foreground, size: 14),
+                  const SizedBox(width: 5),
+                ],
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: maxLabelWidth),
+                  child: labelText,
+                ),
+              ],
+            );
+          },
         ),
       ),
     );

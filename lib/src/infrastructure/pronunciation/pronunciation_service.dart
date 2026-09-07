@@ -56,7 +56,7 @@ class PronunciationException implements Exception {
   String toString() => message;
 }
 
-/// Uses the device speech engine, without a dictionary or cloud HTTP request.
+/// Uses the device speech engine; the selected system voice may require network.
 class SystemPronunciationService implements PronunciationService {
   SystemPronunciationService({FlutterTts? tts}) : _tts = tts ?? FlutterTts();
 
@@ -72,17 +72,10 @@ class SystemPronunciationService implements PronunciationService {
       final voices = await _tts.getVoices;
       final available = voices is List
           ? voices.whereType<Map>().where((voice) {
-              final locale = voice['locale']?.toString().replaceAll('_', '-');
-              final offline =
-                  defaultTargetPlatform != TargetPlatform.android ||
-                  voice['network_required'] == false ||
-                  voice['network_required'] == 'false' ||
-                  voice['network_required'] == '0';
+              final locale = _normalizedLocale(voice['locale']);
               return locale != null &&
                   locale.startsWith('en-') &&
-                  offline &&
-                  !(voice['features']?.toString().contains('notInstalled') ??
-                      false) &&
+                  !_isNotInstalled(voice) &&
                   voice['name'] is String;
             }).toList()
           : <Map>[];
@@ -92,26 +85,30 @@ class SystemPronunciationService implements PronunciationService {
       final targetLocale = accent == PronunciationAccent.british
           ? 'en-GB'
           : 'en-US';
-      final matching = available
-          .where(
-            (voice) =>
-                voice['locale'].toString().replaceAll('_', '-') == targetLocale,
-          )
-          .toList();
+      final matching = available.where(
+        (voice) => _matchesLocale(voice['locale'], targetLocale),
+      );
       if (accent != PronunciationAccent.automatic && matching.isEmpty) {
         throw PronunciationException(
           '请在系统语音设置中安装${accent == PronunciationAccent.british ? '英式' : '美式'}英文离线语音包。',
         );
       }
-      final voice = available.firstWhere(
-        (voice) =>
-            voice['locale'].toString().replaceAll('_', '-') == targetLocale,
-        orElse: () => available.first,
-      );
-      await _tts.setVoice({
+      final offlineMatching = matching.where(_isOfflineVoice);
+      final offlineEnglish = available.where(_isOfflineVoice);
+      final voice =
+          offlineMatching.firstOrNull ??
+          (accent == PronunciationAccent.automatic
+              ? offlineEnglish.firstOrNull
+              : null) ??
+          matching.firstOrNull ??
+          available.first;
+      final selected = await _tts.setVoice({
         'name': voice['name'].toString(),
         'locale': voice['locale'].toString(),
       });
+      if (selected != 1) {
+        throw const PronunciationException('系统朗读无法选择英文声音，请检查语音设置后重试。');
+      }
       await _tts.awaitSpeakCompletion(true);
       final result = await _tts
           .speak(term)
@@ -132,6 +129,32 @@ class SystemPronunciationService implements PronunciationService {
   @override
   Future<void> dispose() async {
     await _tts.stop();
+  }
+
+  static String? _normalizedLocale(Object? value) {
+    final locale = value?.toString().trim().replaceAll('_', '-').toLowerCase();
+    return locale == null || locale.isEmpty ? null : locale;
+  }
+
+  static bool _matchesLocale(Object? value, String targetLocale) {
+    final locale = _normalizedLocale(value);
+    final target = targetLocale.toLowerCase();
+    return locale == target || (locale?.startsWith('$target-') ?? false);
+  }
+
+  static bool _isOfflineVoice(Map voice) {
+    if (defaultTargetPlatform != TargetPlatform.android) return true;
+    final networkRequired = voice['network_required'];
+    return networkRequired != true &&
+        networkRequired?.toString().toLowerCase() != 'true' &&
+        networkRequired?.toString() != '1';
+  }
+
+  static bool _isNotInstalled(Map voice) {
+    return voice['features']?.toString().toLowerCase().contains(
+          'notinstalled',
+        ) ??
+        false;
   }
 }
 

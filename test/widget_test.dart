@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vocab/src/app.dart';
+import 'package:vocab/src/application/import/vocabulary_import_coordinator.dart';
 import 'package:vocab/src/features/profile/profile_view.dart';
 import 'package:vocab/src/data/repositories/kiss_worker_settings_repository.dart';
 import 'package:vocab/src/data/repositories/pronunciation_settings_repository.dart';
@@ -19,6 +21,7 @@ import 'package:vocab/src/infrastructure/dictionary/dictionary_service.dart';
 import 'package:vocab/src/infrastructure/pronunciation/pronunciation_service.dart';
 import 'package:vocab/src/infrastructure/sync/kiss_worker_vocabulary_service.dart';
 import 'package:vocab/src/theme/vocab_theme.dart';
+import 'package:vocab/src/widgets/vocab_ui.dart';
 
 void main() {
   setUp(() {
@@ -36,6 +39,40 @@ void main() {
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(const MethodChannel('vocab/reminders'), null);
+  });
+
+  testWidgets('status pill keeps browser favorite text inside its highlight', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 100,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: StatusPill(
+                  key: Key('browser-favorite-pill'),
+                  label: '浏览器收藏',
+                  color: VocabColors.limeSoft,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final pill = tester.getRect(find.byKey(const Key('browser-favorite-pill')));
+    final label = tester.getRect(find.text('浏览器收藏'));
+    final labelRender = tester.renderObject<RenderParagraph>(
+      find.text('浏览器收藏'),
+    );
+    expect(pill.contains(label.topLeft), isTrue);
+    expect(pill.contains(label.bottomRight), isTrue);
+    expect(labelRender.didExceedMaxLines, isFalse);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets(
@@ -63,6 +100,10 @@ void main() {
               ),
               kissWorkerSettingsRepository: settings,
               kissVocabularyService: service,
+              vocabularyImportCoordinator: VocabularyImportCoordinator(
+                repository,
+                _FakeDictionaryService(),
+              ),
             ),
           ),
         ),
@@ -104,13 +145,16 @@ void main() {
           durationMs: 1,
         );
       }
-      await repository.importVocabulary(const [
+      await repository.importVocabulary([
         ImportedVocabularyCandidate(
           term: 'hello',
-          definition: '你好',
+          definition: List.filled(30, '这是一段用于检验长答案滚动位置的释义。').join(),
           phonetic: '/həˈləʊ/',
+          examples: [
+            List.filled(20, 'This is a long example sentence. ').join(),
+          ],
         ),
-        ImportedVocabularyCandidate(term: 'world', definition: '世界'),
+        const ImportedVocabularyCandidate(term: 'world', definition: '世界'),
       ]);
       await tester.pumpWidget(
         MaterialApp(
@@ -122,6 +166,10 @@ void main() {
       );
       await _pumpDatabaseFrames(tester);
       final current = (await repository.getDueReviews()).first;
+      final initialProgress = tester.widget<LinearProgressIndicator>(
+        find.byKey(const Key('review-progress')),
+      );
+      expect(initialProgress.value, 0.5);
       if (current.phonetic != null) {
         expect(find.text(current.phonetic!), findsOneWidget);
       }
@@ -137,8 +185,24 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text(current.answer), findsOneWidget);
       expect(find.text('美式 · 朗读'), findsOneWidget);
+      expect(find.text('选择后进入下一条'), findsOneWidget);
+      expect(find.text('10 分钟'), findsOneWidget);
+      expect(find.text('3 天'), findsOneWidget);
+      await tester.drag(
+        find.byKey(const Key('review-card-scroll')),
+        const Offset(0, -350),
+      );
+      await tester.pumpAndSettle();
+      var reviewScroll = tester.widget<SingleChildScrollView>(
+        find.byKey(const Key('review-card-scroll')),
+      );
+      expect(reviewScroll.controller!.offset, greaterThan(0));
       await tester.tap(find.text('记得'));
-      await _pumpDatabaseFrames(tester);
+      await tester.pumpAndSettle();
+      reviewScroll = tester.widget<SingleChildScrollView>(
+        find.byKey(const Key('review-card-scroll')),
+      );
+      expect(reviewScroll.controller!.offset, 0);
       final next = (await repository.getDueReviews()).first;
       if (next.phonetic != null) {
         expect(find.text(next.phonetic!), findsOneWidget);
@@ -146,6 +210,14 @@ void main() {
       await tester.tap(find.text('美式 · 朗读'));
       await tester.pumpAndSettle();
       expect(service.lastTerm, next.prompt);
+      expect(find.text('结束本轮'), findsOneWidget);
+      expect(find.text('暂不评分'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('review-skip')));
+      await tester.pumpAndSettle();
+      expect(find.text('本轮已浏览完'), findsOneWidget);
+      expect(find.text('1 个未评分，仍会保留在待复习列表中。'), findsOneWidget);
+      final remaining = await repository.getDueReviews();
+      expect(remaining.map((item) => item.itemId), contains(next.itemId));
       await tester.pumpWidget(const SizedBox.shrink());
       await database.close();
     },
@@ -244,6 +316,12 @@ void main() {
     expect(find.text('早上好，继续开口'), findsOneWidget);
     expect(find.textContaining('个待复习'), findsWidgets);
     _expectSelectedNavigationItem(tester, index: 0, label: '今日');
+
+    for (final (index, label) in const [(1, '词句'), (2, '对练'), (0, '今日')]) {
+      await tester.tap(find.text(label));
+      await tester.pump();
+      _expectSelectedNavigationItem(tester, index: index, label: label);
+    }
 
     await tester.enterText(
       find.byKey(const Key('home-dictionary-search')),
@@ -602,9 +680,17 @@ void _expectSelectedNavigationItem(
   required int index,
   required String label,
 }) {
+  for (var itemIndex = 0; itemIndex < 4; itemIndex++) {
+    final itemFinder = find.byKey(Key('bottom-navigation-item-$itemIndex'));
+    final item = tester.widget<DecoratedBox>(itemFinder);
+    final renderedItem = tester.renderObject<RenderDecoratedBox>(itemFinder);
+    final expectedColor = itemIndex == index
+        ? VocabColors.lime
+        : Colors.transparent;
+    expect((item.decoration as BoxDecoration).color, expectedColor);
+    expect((renderedItem.decoration as BoxDecoration).color, expectedColor);
+  }
   final itemFinder = find.byKey(Key('bottom-navigation-item-$index'));
-  final item = tester.widget<AnimatedContainer>(itemFinder);
-  expect((item.decoration! as BoxDecoration).color, VocabColors.lime);
   expect(
     find.descendant(of: itemFinder, matching: find.text(label)),
     findsOneWidget,

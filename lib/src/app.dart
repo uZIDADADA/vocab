@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'application/import/vocabulary_import_coordinator.dart';
 import 'data/local/app_database.dart';
 import 'data/repositories/ai_settings_repository.dart';
 import 'data/repositories/conversation_repository.dart';
@@ -58,6 +59,8 @@ class _VocabAppState extends State<VocabApp> {
   late final bool _ownsDictionaryService = widget.dictionaryService == null;
   late final DictionaryService _dictionaryService =
       widget.dictionaryService ?? BilingualDictionaryService();
+  late final VocabularyImportCoordinator _vocabularyImportCoordinator =
+      VocabularyImportCoordinator(_repository, _dictionaryService);
   late final bool _ownsPronunciationService =
       widget.pronunciationService == null;
   late final PronunciationService _pronunciationService =
@@ -102,6 +105,7 @@ class _VocabAppState extends State<VocabApp> {
         conversationRepository: _conversationRepository,
         aiChatProvider: _aiChatProvider,
         dictionaryService: _dictionaryService,
+        vocabularyImportCoordinator: _vocabularyImportCoordinator,
         pronunciationSettingsRepository: _pronunciationSettingsRepository,
         pronunciationService: _pronunciationService,
         kissWorkerSettingsRepository: _kissWorkerSettingsRepository,

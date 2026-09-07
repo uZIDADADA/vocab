@@ -219,23 +219,32 @@ class CoachViewState extends State<CoachView> {
                   const SizedBox(height: 14),
                   Row(
                     children: [
-                      StatusPill(
-                        label: settings.config.displayName,
-                        color: VocabColors.surface,
-                        icon: Icons.hub_outlined,
+                      Flexible(
+                        child: StatusPill(
+                          label: settings.config.displayName,
+                          color: VocabColors.surface,
+                          icon: Icons.hub_outlined,
+                        ),
                       ),
-                      const Spacer(),
-                      StatusPill(
-                        label: settings.isConfigured ? '文本模式 · 已配置' : '等待配置',
-                        color: settings.isConfigured
-                            ? VocabColors.limeSoft
-                            : VocabColors.coralSoft,
-                        foreground: settings.isConfigured
-                            ? VocabColors.green
-                            : VocabColors.coralInk,
-                        icon: settings.isConfigured
-                            ? Icons.check_circle_outline_rounded
-                            : Icons.key_rounded,
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: StatusPill(
+                            label: settings.isConfigured
+                                ? '文本模式 · 已配置'
+                                : '等待配置',
+                            color: settings.isConfigured
+                                ? VocabColors.limeSoft
+                                : VocabColors.coralSoft,
+                            foreground: settings.isConfigured
+                                ? VocabColors.green
+                                : VocabColors.coralInk,
+                            icon: settings.isConfigured
+                                ? Icons.check_circle_outline_rounded
+                                : Icons.key_rounded,
+                          ),
+                        ),
                       ),
                     ],
                   ),

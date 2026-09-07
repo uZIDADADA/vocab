@@ -127,15 +127,18 @@ Worker and browser-extension interoperability still requires device validation.
 
 Word cards use the device's built-in English text-to-speech engine by default,
 via the open-source `flutter_tts` bridge. No dictionary HTTP API or key is used
-for this path. Android selects an offline English voice; install an English
-voice pack in system speech settings if none is available. US English is
-preferred, with another installed English voice as fallback.
+for this path. Android prefers an installed offline English voice; when the
+requested accent is available only as a system-provided network voice, the
+device speech engine may use its own network service. Install an English voice
+pack in system speech settings for reliable offline playback. US English is
+preferred for automatic playback, with another English voice as fallback.
 
 Optionally open **我的 → 单词发音** and save a Merriam-Webster Collegiate key.
 Configured keys take priority for default/US recorded pronunciation; lookup/download
 failures fall back to system speech. MW recordings use a 50 MB local cache,
 and the key remains in platform secure storage. Only the MW path sends the
-word to an online dictionary. British pronunciation uses the system en-GB voice.
+word to an online dictionary directly from the app. British pronunciation uses
+the system en-GB voice and never silently substitutes an American voice.
 The review screen shows existing phonetics, part of speech, meaning and example
 with separate UK/US speech buttons. Missing dictionary data is not fetched or
 invented. No Free Dictionary API requests remain.

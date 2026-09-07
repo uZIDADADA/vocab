@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../application/import/vocabulary_import_coordinator.dart';
 import '../../data/repositories/learning_repository.dart';
 import '../../data/repositories/kiss_worker_settings_repository.dart';
 import '../../data/repositories/pronunciation_settings_repository.dart';
@@ -16,6 +17,7 @@ class ProfileView extends StatefulWidget {
     required this.pronunciationSettingsRepository,
     required this.kissWorkerSettingsRepository,
     required this.kissVocabularyService,
+    required this.vocabularyImportCoordinator,
     super.key,
   });
 
@@ -23,6 +25,7 @@ class ProfileView extends StatefulWidget {
   final PronunciationSettingsRepository pronunciationSettingsRepository;
   final KissWorkerSettingsRepository kissWorkerSettingsRepository;
   final KissVocabularyService kissVocabularyService;
+  final VocabularyImportCoordinator vocabularyImportCoordinator;
 
   final VoidCallback onOpenAiSettings;
 
@@ -58,6 +61,7 @@ class _ProfileViewState extends State<ProfileView> {
                     learningRepository: widget.repository,
                     settingsRepository: widget.kissWorkerSettingsRepository,
                     service: widget.kissVocabularyService,
+                    importCoordinator: widget.vocabularyImportCoordinator,
                   ),
                   const SizedBox(height: 14),
                   _SyncStatusCard(stats: stats),
@@ -90,11 +94,13 @@ class _KissWorkerCard extends StatefulWidget {
     required this.learningRepository,
     required this.settingsRepository,
     required this.service,
+    required this.importCoordinator,
   });
 
   final LearningRepository learningRepository;
   final KissWorkerSettingsRepository settingsRepository;
   final KissVocabularyService service;
+  final VocabularyImportCoordinator importCoordinator;
 
   @override
   State<_KissWorkerCard> createState() => _KissWorkerCardState();
@@ -190,15 +196,15 @@ class _KissWorkerCardState extends State<_KissWorkerCard> {
         ),
       );
       if (confirmed != true || !mounted) return;
-      setState(() => _syncStage = '写入中…');
-      final result = await widget.learningRepository.importVocabulary(
+      setState(() => _syncStage = '补充释义并写入…');
+      final result = await widget.importCoordinator.importVocabulary(
         candidates,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            '导入 ${result.importedCount} 个单词，跳过 ${result.skippedCount} 个重复项',
+            '导入 ${result.importedCount} 个单词，补充 ${result.updatedCount} 个释义，跳过 ${result.skippedCount} 个重复项',
           ),
         ),
       );

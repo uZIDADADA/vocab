@@ -640,10 +640,13 @@ class _LibraryCard extends StatelessWidget {
                 const SizedBox(height: 10),
                 Row(
                   children: [
-                    Flexible(
-                      child: StatusPill(label: tag, color: tagColor),
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: StatusPill(label: tag, color: tagColor),
+                      ),
                     ),
-                    const Spacer(),
+                    const SizedBox(width: 8),
                     Text(
                       '掌握度  $mastery/5',
                       style: const TextStyle(

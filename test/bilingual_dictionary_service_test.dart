@@ -72,6 +72,14 @@ void main() {
     },
   );
 
+  test('browser favorite examples have offline Chinese definitions', () async {
+    for (final term in const ['completed', 'flow', 'explorer', 'diagram']) {
+      final entry = await service.lookup(term);
+      expect(entry, isNotNull, reason: term);
+      expect(entry!.chineseDefinition, isNotEmpty, reason: term);
+    }
+  });
+
   test('missing Chinese coverage keeps the original English entry', () async {
     final entry = (await service.lookup('aardvark'))!;
     expect(entry.senses, isNotEmpty);

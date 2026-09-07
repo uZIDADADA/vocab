@@ -262,6 +262,7 @@ class LearningRepository {
   ) async {
     var imported = 0;
     var skipped = 0;
+    var updated = 0;
     final seen = <String>{};
     for (final candidate in candidates) {
       final term = candidate.term.trim();
@@ -270,8 +271,24 @@ class LearningRepository {
         skipped++;
         continue;
       }
-      if (await _database.hasActiveVocabularyTerm(term)) {
-        skipped++;
+      final existing = await _database.getActiveVocabularyByTerm(term);
+      if (existing != null) {
+        if (existing.source == 'KISS-Worker' &&
+            _isMissingDefinition(existing.definition) &&
+            !_isMissingDefinition(candidate.definition)) {
+          await _database.updateVocabularyDetails(
+            id: existing.id,
+            definition: candidate.definition,
+            partOfSpeech: candidate.partOfSpeech ?? existing.partOfSpeech,
+            sourceContext: _sourceContextForCandidate(
+              candidate,
+              existing: existing.sourceContext,
+            ),
+          );
+          updated++;
+        } else {
+          skipped++;
+        }
         continue;
       }
       await _database.addVocabulary(
@@ -280,22 +297,62 @@ class LearningRepository {
         definition: candidate.definition.trim().isEmpty
             ? '待补充释义'
             : candidate.definition.trim(),
+        partOfSpeech: candidate.partOfSpeech,
         source: 'KISS-Worker',
         tag: '浏览器收藏',
-        sourceContext: jsonEncode({
-          if (candidate.phonetic?.trim().isNotEmpty == true)
-            'phonetic': candidate.phonetic!.trim(),
-          if (candidate.examples.isNotEmpty) 'examples': candidate.examples,
-          if (candidate.sourceTimestamp != null)
-            'timestamp': candidate.sourceTimestamp!.toIso8601String(),
-        }),
+        sourceContext: _sourceContextForCandidate(candidate),
       );
       imported++;
     }
     return VocabularyImportResult(
       importedCount: imported,
       skippedCount: skipped,
+      updatedCount: updated,
     );
+  }
+
+  Future<List<ImportedVocabularyCandidate>>
+  importedWordsMissingDefinition() async {
+    final rows = await _database.getVocabulary();
+    return [
+      for (final row in rows)
+        if (row.source == 'KISS-Worker' && _isMissingDefinition(row.definition))
+          ImportedVocabularyCandidate(term: row.term, definition: ''),
+    ];
+  }
+
+  static bool _isMissingDefinition(String definition) {
+    final normalized = definition.trim();
+    return normalized.isEmpty || normalized == '待补充释义';
+  }
+
+  static String _sourceContextForCandidate(
+    ImportedVocabularyCandidate candidate, {
+    String? existing,
+  }) {
+    final context = <String, dynamic>{};
+    if (existing != null) {
+      try {
+        final decoded = jsonDecode(existing);
+        if (decoded is Map<String, dynamic>) context.addAll(decoded);
+      } on FormatException {
+        // Ignore malformed optional metadata while preserving the word itself.
+      }
+    }
+    if (candidate.phonetic?.trim().isNotEmpty == true) {
+      context['phonetic'] = candidate.phonetic!.trim();
+    }
+    if (candidate.examples.isNotEmpty) {
+      context['examples'] = candidate.examples;
+      context['example'] = candidate.examples.first;
+    }
+    if (candidate.sourceTimestamp != null) {
+      context['timestamp'] = candidate.sourceTimestamp!.toIso8601String();
+    }
+    if (candidate.dictionarySource?.trim().isNotEmpty == true) {
+      context['dictionarySource'] = candidate.dictionarySource!.trim();
+    }
+    return jsonEncode(context);
   }
 
   Future<int> saveCoachSuggestions(
