@@ -619,7 +619,7 @@ class _PronunciationSettingsCardState
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              '默认使用设备英文语音，无需 Key 或在线词典。Android 需安装英文离线语音包。配置后优先使用 Merriam-Webster 真人录音（首次获取需联网），失败时回退系统朗读。密钥只保存在系统安全存储中。',
+              '默认使用设备英文语音，无需 Key 或在线词典。Android 会优先使用离线语音，缺少对应口音时由系统语音引擎尝试联网获取。配置后优先使用 Merriam-Webster 真人录音（首次获取需联网），失败时回退系统朗读。密钥只保存在系统安全存储中。',
             ),
             const SizedBox(height: 14),
             TextField(

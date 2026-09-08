@@ -223,6 +223,43 @@ void main() {
     await service.dispose();
   });
 
+  test(
+    'British speech asks the engine for en-GB when no voice is listed',
+    () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      const channel = MethodChannel('flutter_tts');
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            calls.add(call);
+            if (call.method == 'getVoices') {
+              return [
+                {
+                  'name': 'US offline',
+                  'locale': 'en-US',
+                  'network_required': '0',
+                },
+              ];
+            }
+            return 1;
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+      final service = SystemPronunciationService();
+      await service.play('schedule', accent: PronunciationAccent.british);
+      expect(calls.where((call) => call.method == 'setVoice'), isEmpty);
+      final setLanguage = calls.singleWhere(
+        (call) => call.method == 'setLanguage',
+      );
+      expect(setLanguage.arguments, 'en-GB');
+      expect(calls.last.method, 'speak');
+      await service.dispose();
+    },
+  );
+
   test('British speech does not substitute an American voice', () async {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
     addTearDown(() => debugDefaultTargetPlatformOverride = null);
@@ -240,6 +277,7 @@ void main() {
               },
             ];
           }
+          if (call.method == 'setLanguage') return 0;
           return 1;
         });
     addTearDown(
@@ -253,7 +291,7 @@ void main() {
         isA<PronunciationException>().having(
           (error) => error.message,
           'message',
-          contains('英式英文离线语音包'),
+          allOf(contains('英式英语'), contains('保持联网')),
         ),
       ),
     );
@@ -262,30 +300,38 @@ void main() {
     await service.dispose();
   });
 
-  test('missing English voice gives installation guidance', () async {
-    const channel = MethodChannel('flutter_tts');
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(
-          channel,
-          (call) async => call.method == 'getVoices' ? [] : 1,
-        );
-    addTearDown(
-      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, null),
-    );
-    final service = SystemPronunciationService();
-    await expectLater(
-      service.play('hello'),
-      throwsA(
-        isA<PronunciationException>().having(
-          (e) => e.message,
-          'message',
-          contains('英文离线语音包'),
+  test(
+    'missing English voice gives online and installation guidance',
+    () async {
+      const channel = MethodChannel('flutter_tts');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            channel,
+            (call) async =>
+                call.method == 'getVoices' || call.method == 'setLanguage'
+                ? call.method == 'getVoices'
+                      ? []
+                      : 0
+                : 1,
+          );
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+      final service = SystemPronunciationService();
+      await expectLater(
+        service.play('hello'),
+        throwsA(
+          isA<PronunciationException>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('保持联网'), contains('安装对应语音')),
+          ),
         ),
-      ),
-    );
-    await service.dispose();
-  });
+      );
+      await service.dispose();
+    },
+  );
 }
 
 class _FakeSpeech implements PronunciationService {

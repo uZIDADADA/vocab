@@ -79,20 +79,12 @@ class SystemPronunciationService implements PronunciationService {
                   voice['name'] is String;
             }).toList()
           : <Map>[];
-      if (available.isEmpty) {
-        throw const PronunciationException('未找到本机英文语音，请在系统语音设置中安装英文离线语音包。');
-      }
       final targetLocale = accent == PronunciationAccent.british
           ? 'en-GB'
           : 'en-US';
-      final matching = available.where(
-        (voice) => _matchesLocale(voice['locale'], targetLocale),
-      );
-      if (accent != PronunciationAccent.automatic && matching.isEmpty) {
-        throw PronunciationException(
-          '请在系统语音设置中安装${accent == PronunciationAccent.british ? '英式' : '美式'}英文离线语音包。',
-        );
-      }
+      final matching = available
+          .where((voice) => _matchesLocale(voice['locale'], targetLocale))
+          .toList();
       final offlineMatching = matching.where(_isOfflineVoice);
       final offlineEnglish = available.where(_isOfflineVoice);
       final voice =
@@ -101,13 +93,31 @@ class SystemPronunciationService implements PronunciationService {
               ? offlineEnglish.firstOrNull
               : null) ??
           matching.firstOrNull ??
-          available.first;
-      final selected = await _tts.setVoice({
-        'name': voice['name'].toString(),
-        'locale': voice['locale'].toString(),
-      });
+          (accent == PronunciationAccent.automatic
+              ? available.firstOrNull
+              : null);
+      var selected = 0;
+      if (voice != null) {
+        selected = await _tts.setVoice({
+          'name': voice['name'].toString(),
+          'locale': voice['locale'].toString(),
+        });
+      }
       if (selected != 1) {
-        throw const PronunciationException('系统朗读无法选择英文声音，请检查语音设置后重试。');
+        // Some Android engines report a locale as available without exposing
+        // its downloadable/network voice in getVoices. Let the engine resolve
+        // the requested locale instead of failing before it can fetch speech.
+        selected = await _tts.setLanguage(targetLocale);
+      }
+      if (selected != 1) {
+        final accentName = accent == PronunciationAccent.british
+            ? '英式英语'
+            : accent == PronunciationAccent.american
+            ? '美式英语'
+            : '英语';
+        throw PronunciationException(
+          '系统语音引擎暂无$accentName语音。请保持联网后重试，或在系统语音设置中安装对应语音。',
+        );
       }
       await _tts.awaitSpeakCompletion(true);
       final result = await _tts
