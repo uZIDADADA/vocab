@@ -24,7 +24,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      VOCAB_RELEASE_KEYSTORE: ${{ runner.temp }}/vocab-release.p12
       VOCAB_RELEASE_KEYSTORE_BASE64: ${{ secrets.VOCAB_RELEASE_KEYSTORE_BASE64 }}
       VOCAB_RELEASE_STORE_PASSWORD: ${{ secrets.VOCAB_RELEASE_STORE_PASSWORD }}
       VOCAB_RELEASE_KEY_ALIAS: ${{ secrets.VOCAB_RELEASE_KEY_ALIAS }}
@@ -85,14 +84,17 @@ jobs:
             printf 'Missing GitHub Actions secrets: %s\n' "${missing[*]}" >&2
             exit 1
           fi
+          signing_keystore="$RUNNER_TEMP/vocab-release.p12"
           umask 077
           printf '%s' "$VOCAB_RELEASE_KEYSTORE_BASE64" \
-            | base64 --decode > "$VOCAB_RELEASE_KEYSTORE"
+            | base64 --decode > "$signing_keystore"
           keytool -list \
-            -keystore "$VOCAB_RELEASE_KEYSTORE" \
+            -keystore "$signing_keystore" \
             -storetype "$VOCAB_RELEASE_STORE_TYPE" \
             -storepass "$VOCAB_RELEASE_STORE_PASSWORD" \
             -alias "$VOCAB_RELEASE_KEY_ALIAS" > /dev/null
+          printf 'VOCAB_RELEASE_KEYSTORE=%s\n' "$signing_keystore" \
+            >> "$GITHUB_ENV"
 
       - name: Resolve dependencies
         run: flutter pub get
