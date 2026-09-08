@@ -45,5 +45,11 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# Android signing material must never enter source control.
+/android/key.properties
+*.jks
+*.keystore
+*.p12
+
 # Widget Preview related
 .widget_preview/

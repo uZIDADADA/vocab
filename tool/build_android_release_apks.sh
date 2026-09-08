@@ -6,6 +6,7 @@ project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 output_dir="$project_dir/build/app/outputs/flutter-apk"
 
 cd "$project_dir"
+source "$project_dir/tool/load_android_release_signing.sh"
 
 # A previous universal build can otherwise remain beside the split APKs and be
 # mistaken for the current release artifact.

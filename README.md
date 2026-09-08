@@ -31,9 +31,20 @@ dart run build_runner build
 flutter run
 ```
 
-## Android release APKs
+## Android release builds
 
-Build ABI-specific release APKs with the project script:
+Android Release artifacts use a private, long-lived signing key instead of the
+Flutter debug key. On macOS, create it once; the encrypted keystore is stored
+outside the repository and its random password is stored in macOS Keychain:
+
+```bash
+./tool/setup_android_release_signing_macos.sh
+```
+
+Back up both the keystore and its Keychain password securely. Losing them makes
+it impossible to issue compatible APK updates. Never commit or share either.
+
+Build ABI-specific Release APKs for direct device testing:
 
 ```bash
 ./tool/build_android_release_apks.sh
@@ -43,6 +54,55 @@ It produces separate `armeabi-v7a`, `arm64-v8a`, and `x86_64` APKs under
 `build/app/outputs/flutter-apk/` and removes any stale universal release APK
 from that directory. Use an Android App Bundle instead when publishing through
 Google Play so Play can deliver the device-specific APK automatically.
+
+For Google Play internal testing or production, build the signed Android App
+Bundle instead:
+
+```bash
+./tool/build_android_release_aab.sh
+```
+
+Release builds on CI or non-macOS hosts can provide
+`VOCAB_RELEASE_KEYSTORE`, `VOCAB_RELEASE_STORE_PASSWORD`,
+`VOCAB_RELEASE_KEY_ALIAS`, and `VOCAB_RELEASE_KEY_PASSWORD` directly.
+
+### GitHub Actions builds
+
+The `Android release` workflow builds signed ABI-specific APKs and an AAB on
+every push to `main`, on version tags matching `v*`, and when started manually
+from the GitHub Actions page. Every successful run keeps the packages as a
+30-day workflow artifact. A version tag also publishes the same files and their
+SHA-256 checksums to GitHub Releases.
+
+Configure these repository secrets under **Settings → Secrets and variables →
+Actions** before the first run:
+
+- `VOCAB_RELEASE_KEYSTORE_BASE64`: Base64 text of the PKCS12 keystore.
+- `VOCAB_RELEASE_STORE_PASSWORD`: Keystore password.
+- `VOCAB_RELEASE_KEY_ALIAS`: Key alias (`vocab` for the setup script above).
+- `VOCAB_RELEASE_KEY_PASSWORD`: Private-key password.
+
+On the Mac that owns the signing key, the GitHub CLI can transfer the values
+without printing the password:
+
+```bash
+base64 -i ~/.config/vocab/signing/vocab-release.p12 | \
+  gh secret set VOCAB_RELEASE_KEYSTORE_BASE64
+security find-generic-password \
+  -a vocab-release \
+  -s io.github.uzidadada.vocab.android-signing \
+  -w | gh secret set VOCAB_RELEASE_STORE_PASSWORD
+gh secret set VOCAB_RELEASE_KEY_ALIAS --body vocab
+security find-generic-password \
+  -a vocab-release \
+  -s io.github.uzidadada.vocab.android-signing \
+  -w | gh secret set VOCAB_RELEASE_KEY_PASSWORD
+```
+
+For an ordinary build, push to `main` and download the artifact from its Actions
+run. For a permanent release, first update `version:` in `pubspec.yaml`, commit
+and push it, then push a matching tag such as `v0.1.1`. The workflow rejects a
+tag whose version does not match `pubspec.yaml`.
 
 See [docs/architecture.md](docs/architecture.md) for the planned system design.
 Logo explorations live in [docs/design/logo-candidates](docs/design/logo-candidates).
@@ -129,7 +189,9 @@ Word cards use the device's built-in English text-to-speech engine by default,
 via the open-source `flutter_tts` bridge. No dictionary HTTP API or key is used
 for this path. Android prefers an installed offline English voice; when the
 requested accent is available only as a system-provided network voice, the
-device speech engine may use its own network service. Install an English voice
+device speech engine may use its own network service. If an available accent is
+not listed as a voice, the app still asks the engine to resolve that locale so
+it can fetch speech online instead of failing early. Install an English voice
 pack in system speech settings for reliable offline playback. US English is
 preferred for automatic playback, with another English voice as fallback.
 
