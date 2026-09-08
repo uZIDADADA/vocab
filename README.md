@@ -100,9 +100,11 @@ security find-generic-password \
 ```
 
 For an ordinary build, push to `main` and download the artifact from its Actions
-run. For a permanent release, first update `version:` in `pubspec.yaml`, commit
-and push it, then push a matching tag such as `v0.1.1`. The workflow rejects a
-tag whose version does not match `pubspec.yaml`.
+run. For a downloadable release, first update `version:` in `pubspec.yaml`,
+commit and push it, then push a matching tag. A prerelease version such as
+`0.1.0-beta.1+2` uses tag `v0.1.0-beta.1` and is marked as a GitHub
+Pre-release; a stable version such as `1.0.0+10` uses tag `v1.0.0`. The workflow
+rejects a tag whose version does not match `pubspec.yaml`.
 
 See [docs/architecture.md](docs/architecture.md) for the planned system design.
 Logo explorations live in [docs/design/logo-candidates](docs/design/logo-candidates).
