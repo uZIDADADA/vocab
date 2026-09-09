@@ -10,6 +10,7 @@ import 'package:vocab/src/application/import/vocabulary_import_coordinator.dart'
 import 'package:vocab/src/features/profile/profile_view.dart';
 import 'package:vocab/src/data/repositories/kiss_worker_settings_repository.dart';
 import 'package:vocab/src/data/repositories/pronunciation_settings_repository.dart';
+import 'package:vocab/src/data/repositories/translator_settings_repository.dart';
 import 'package:vocab/src/features/review/review_session_page.dart';
 import 'package:vocab/src/data/repositories/learning_repository.dart';
 import 'package:vocab/src/data/local/app_database.dart';
@@ -98,6 +99,7 @@ void main() {
               pronunciationSettingsRepository: PronunciationSettingsRepository(
                 store,
               ),
+              translatorSettingsRepository: TranslatorSettingsRepository(store),
               kissWorkerSettingsRepository: settings,
               kissVocabularyService: service,
               vocabularyImportCoordinator: VocabularyImportCoordinator(
@@ -293,6 +295,52 @@ void main() {
     },
   );
 
+  testWidgets('Microsoft Translator settings stay in secure storage', (
+    tester,
+  ) async {
+    final database = AppDatabase.forTesting(NativeDatabase.memory());
+    final store = MemoryAiSecretStore();
+    final settings = TranslatorSettingsRepository(store);
+    await database.customSelect('SELECT 1').get();
+    await tester.pumpWidget(
+      VocabApp(
+        database: database,
+        aiSecretStore: store,
+        aiChatProvider: _FakeAiChatProvider(),
+        dictionaryService: _FakeDictionaryService(),
+        pronunciationService: _FakePronunciationService(),
+        kissVocabularyService: _FakeKissVocabularyService(),
+      ),
+    );
+    await _pumpDatabaseFrames(tester);
+    await tester.tap(find.text('我的'));
+    await tester.pumpAndSettle();
+    final card = find.byKey(const Key('microsoft-translator-settings'));
+    await tester.ensureVisible(card);
+    await tester.tap(card);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('translator-api-key')),
+      'translator-key',
+    );
+    await tester.enterText(
+      find.byKey(const Key('translator-region')),
+      'eastasia',
+    );
+    await tester.tap(find.text('保存'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pump();
+
+    final saved = await settings.load();
+    expect(saved.apiKey, 'translator-key');
+    expect(saved.region, 'eastasia');
+    expect(find.text('已配置'), findsWidgets);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 20));
+    await database.close();
+  });
+
   testWidgets('shows the dashboard and switches through the prototype', (
     tester,
   ) async {
@@ -338,7 +386,7 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.textContaining('无需 API Key'), findsOneWidget);
+    expect(find.textContaining('在线查询'), findsOneWidget);
     await tester.tap(find.byTooltip('播放单词发音'));
     await tester.pump();
     expect(pronunciationService.lastTerm, 'serendipity');

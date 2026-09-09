@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../application/import/vocabulary_import_coordinator.dart';
 import '../../data/repositories/learning_repository.dart';
 import '../../data/repositories/kiss_worker_settings_repository.dart';
 import '../../data/repositories/pronunciation_settings_repository.dart';
+import '../../data/repositories/translator_settings_repository.dart';
 import '../../domain/learning_models.dart';
 import '../../infrastructure/sync/kiss_worker_vocabulary_service.dart';
 import '../../theme/vocab_theme.dart';
@@ -15,6 +15,7 @@ class ProfileView extends StatefulWidget {
     required this.onOpenAiSettings,
     required this.repository,
     required this.pronunciationSettingsRepository,
+    required this.translatorSettingsRepository,
     required this.kissWorkerSettingsRepository,
     required this.kissVocabularyService,
     required this.vocabularyImportCoordinator,
@@ -23,6 +24,7 @@ class ProfileView extends StatefulWidget {
 
   final LearningRepository repository;
   final PronunciationSettingsRepository pronunciationSettingsRepository;
+  final TranslatorSettingsRepository translatorSettingsRepository;
   final KissWorkerSettingsRepository kissWorkerSettingsRepository;
   final KissVocabularyService kissVocabularyService;
   final VocabularyImportCoordinator vocabularyImportCoordinator;
@@ -65,6 +67,10 @@ class _ProfileViewState extends State<ProfileView> {
                   ),
                   const SizedBox(height: 14),
                   _SyncStatusCard(stats: stats),
+                  const SizedBox(height: 14),
+                  _TranslatorSettingsCard(
+                    repository: widget.translatorSettingsRepository,
+                  ),
                   const SizedBox(height: 14),
                   _PronunciationSettingsCard(
                     repository: widget.pronunciationSettingsRepository,
@@ -537,6 +543,240 @@ class _KissWorkerConfigDialogState extends State<_KissWorkerConfigDialog> {
   }
 }
 
+class _TranslatorSettingsCard extends StatefulWidget {
+  const _TranslatorSettingsCard({required this.repository});
+
+  final TranslatorSettingsRepository repository;
+
+  @override
+  State<_TranslatorSettingsCard> createState() =>
+      _TranslatorSettingsCardState();
+}
+
+class _TranslatorSettingsCardState extends State<_TranslatorSettingsCard> {
+  late Future<TranslatorSettings> _settings = widget.repository.load();
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<TranslatorSettings>(
+      future: _settings,
+      builder: (context, snapshot) {
+        final configured = snapshot.data?.isConfigured == true;
+        return SoftCard(
+          key: const Key('microsoft-translator-settings'),
+          onTap: _showSettingsDialog,
+          color: configured ? VocabColors.limeSoft : VocabColors.surface,
+          borderColor: configured ? VocabColors.lime : VocabColors.line,
+          child: Row(
+            children: [
+              CircleIcon(
+                icon: Icons.translate_rounded,
+                background: VocabColors.surface,
+                foreground: configured ? VocabColors.green : VocabColors.muted,
+                size: 48,
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '在线词典',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      configured
+                          ? 'Microsoft Translator · 中英双向查询'
+                          : '配置 Microsoft Translator 后启用搜索',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: VocabColors.muted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              StatusPill(
+                label: configured ? '已配置' : '需 Key',
+                color: configured
+                    ? VocabColors.surface
+                    : VocabColors.softSurface,
+                foreground: configured ? VocabColors.green : VocabColors.muted,
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showSettingsDialog() async {
+    final current = await widget.repository.load();
+    if (!mounted) return;
+    final saved = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _TranslatorSettingsDialog(
+        repository: widget.repository,
+        current: current,
+      ),
+    );
+    if (saved == true && mounted) {
+      setState(() {
+        _settings = widget.repository.load();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Microsoft Translator 设置已更新')),
+      );
+    }
+  }
+}
+
+class _TranslatorSettingsDialog extends StatefulWidget {
+  const _TranslatorSettingsDialog({
+    required this.repository,
+    required this.current,
+  });
+
+  final TranslatorSettingsRepository repository;
+  final TranslatorSettings current;
+
+  @override
+  State<_TranslatorSettingsDialog> createState() =>
+      _TranslatorSettingsDialogState();
+}
+
+class _TranslatorSettingsDialogState extends State<_TranslatorSettingsDialog> {
+  late final TextEditingController _keyController = TextEditingController();
+  late final TextEditingController _regionController = TextEditingController(
+    text: widget.current.region ?? '',
+  );
+  bool _isSaving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _keyController.dispose();
+    _regionController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final replacementKey = _keyController.text.trim();
+    final key = replacementKey.isNotEmpty
+        ? replacementKey
+        : widget.current.apiKey;
+    if (key == null || key.isEmpty) {
+      setState(() => _error = '请输入 API Key');
+      return;
+    }
+    setState(() {
+      _isSaving = true;
+      _error = null;
+    });
+    try {
+      await widget.repository.save(apiKey: key, region: _regionController.text);
+      if (mounted) Navigator.pop(context, true);
+    } on Object {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+          _error = '保存失败，请稍后重试';
+        });
+      }
+    }
+  }
+
+  Future<void> _disable() async {
+    setState(() {
+      _isSaving = true;
+      _error = null;
+    });
+    try {
+      await widget.repository.clear();
+      if (mounted) Navigator.pop(context, true);
+    } on Object {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+          _error = '停用失败，请稍后重试';
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('配置 Microsoft Translator'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '搜索内容会发送给 Microsoft Translator。API Key 和 Region 只保存在系统安全存储中；不再使用随应用打包的本地词典。',
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              key: const Key('translator-api-key'),
+              controller: _keyController,
+              autofocus: !widget.current.isConfigured,
+              obscureText: true,
+              autocorrect: false,
+              enableSuggestions: false,
+              decoration: InputDecoration(
+                labelText: widget.current.isConfigured
+                    ? 'API Key（留空则保持不变）'
+                    : 'API Key',
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              key: const Key('translator-region'),
+              controller: _regionController,
+              autocorrect: false,
+              enableSuggestions: false,
+              decoration: const InputDecoration(
+                labelText: 'Region（全局 Translator 资源可留空）',
+                hintText: '例如 eastasia',
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              '在 Azure Portal 创建 Translator 资源后，从“密钥和终结点”复制 Key 与 Region。',
+              style: TextStyle(fontSize: 11, color: VocabColors.muted),
+            ),
+            if (_error case final error?) ...[
+              const SizedBox(height: 10),
+              Text(error, style: const TextStyle(color: VocabColors.coral)),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        if (widget.current.isConfigured)
+          TextButton(
+            onPressed: _isSaving ? null : _disable,
+            child: const Text('停用'),
+          ),
+        TextButton(
+          onPressed: _isSaving ? null : () => Navigator.pop(context, false),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: _isSaving ? null : _save,
+          child: Text(_isSaving ? '保存中…' : '保存'),
+        ),
+      ],
+    );
+  }
+}
+
 class _PronunciationSettingsCard extends StatefulWidget {
   const _PronunciationSettingsCard({required this.repository});
 
@@ -830,13 +1070,6 @@ class _MoreSettingsCard extends StatelessWidget {
           ),
           Divider(height: 1, indent: 54),
           _SettingRow(
-            icon: Icons.menu_book_outlined,
-            label: '离线词典',
-            value: '英汉双语',
-            onTap: () => _showDictionaryLicense(context),
-          ),
-          Divider(height: 1, indent: 54),
-          _SettingRow(
             icon: Icons.shield_outlined,
             label: '加密与恢复',
             value: '本机解密',
@@ -848,48 +1081,6 @@ class _MoreSettingsCard extends StatelessWidget {
   }
 }
 
-void _showDictionaryLicense(BuildContext context) {
-  showDialog<void>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('离线词典来源'),
-      content: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '中文释义：ECDICT 开放词典常用词子集（27,829 个词条），'
-              '上游仓库以 MIT 许可发布。来源：https://github.com/skywind3000/ECDICT\n\n'
-              '英文释义：Open English WordNet 2025（v2.3.2），CC BY 4.0。'
-              '来源：https://en-word.net/\n\n'
-              '全部在本机查询，无需网络或 API Key。中文搜索按中文释义匹配英文词，'
-              '不翻译整句；未收录的中文释义会明确提示。\n\n'
-              'ECDICT 为社区汇编词典，可能存在遗漏或错误，并非出版社审校词典。'
-              '中文释义与 WordNet 英文词义分别展示，不作逐条对应；个人释义保留独立显示。',
-            ),
-            const SizedBox(height: 16),
-            FutureBuilder<String>(
-              future: rootBundle.loadString(
-                'assets/dictionary/ECDICT-LICENSE.txt',
-              ),
-              builder: (context, snapshot) => Text(
-                snapshot.data ?? 'ECDICT MIT 许可声明加载中…',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('知道了'),
-        ),
-      ],
-    ),
-  );
-}
-
 void _showPrivacy(BuildContext context) {
   showDialog<void>(
     context: context,
@@ -897,7 +1088,7 @@ void _showPrivacy(BuildContext context) {
       title: const Text('加密与恢复说明'),
       content: const SingleChildScrollView(
         child: Text(
-          'API 密钥和 KISS 连接信息保存在系统安全存储中。调用服务时会使用相应凭据进行鉴权；AI 对话内容会发送给你配置的服务。\n\n学习词句和对话保存在本机数据库中。KISS 收藏词汇在设备上解密后导入；目前尚未提供完整数据备份、WebDAV 同步或恢复功能。',
+          'API 密钥和 KISS 连接信息保存在系统安全存储中。调用服务时会使用相应凭据进行鉴权；AI 对话内容会发送给你配置的 AI 服务，搜索词会发送给 Microsoft Translator。\n\n学习词句和对话保存在本机数据库中。KISS 收藏词汇在设备上解密后导入，不会自动发送给翻译服务；目前尚未提供完整数据备份、WebDAV 同步或恢复功能。',
         ),
       ),
       actions: [

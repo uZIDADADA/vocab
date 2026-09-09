@@ -14,13 +14,16 @@ import 'package:vocab/src/theme/vocab_theme.dart';
 
 const apple = DictionaryEntry(
   term: 'apple',
-  source: 'ECDICT / Open English WordNet',
-  chineseSource: 'ECDICT',
+  source: 'Microsoft Translator',
+  chineseSource: 'Microsoft Translator',
   chineseDefinition: 'n. 苹果',
+  partOfSpeech: 'n.',
   senses: [DictionarySense(partOfSpeech: 'n.', definition: 'an edible fruit')],
 );
 
 class TestDictionary implements DictionaryService {
+  int lookupCalls = 0;
+  int searchCalls = 0;
   Future<DictionaryEntry?> Function(String) lookupHandler = (_) async => apple;
   Future<List<DictionaryMatch>> Function(String) searchHandler = (_) async =>
       const [
@@ -28,10 +31,17 @@ class TestDictionary implements DictionaryService {
         DictionaryMatch(term: 'apple tree', chineseDefinition: 'n. 苹果树'),
       ];
   @override
-  Future<DictionaryEntry?> lookup(String term) => lookupHandler(term);
+  Future<DictionaryEntry?> lookup(String term) {
+    lookupCalls++;
+    return lookupHandler(term);
+  }
+
   @override
-  Future<List<DictionaryMatch>> searchChinese(String query) =>
-      searchHandler(query);
+  Future<List<DictionaryMatch>> searchChinese(String query) {
+    searchCalls++;
+    return searchHandler(query);
+  }
+
   @override
   Future<void> close() async {}
 }
@@ -110,13 +120,13 @@ void main() {
         find.byKey(const ValueKey('dictionary-candidate-apple')),
       );
       await tester.pumpAndSettle();
-      expect(find.text('中文释义 · ECDICT'), findsOneWidget);
+      expect(find.text('中文翻译 · Microsoft Translator'), findsOneWidget);
       expect(find.text('n. 苹果'), findsOneWidget);
       expect(
         find.textContaining('an edible fruit', findRichText: true),
         findsOneWidget,
       );
-      expect(find.text('英文释义 · WordNet'), findsOneWidget);
+      expect(find.text('补充释义 · Microsoft Translator'), findsOneWidget);
       await tester.tap(find.byTooltip('播放单词发音'));
       await tester.pumpAndSettle();
       expect(pronunciation.spoken, 'apple');
@@ -130,30 +140,49 @@ void main() {
         () => savedWord.timeout(const Duration(seconds: 5)),
       );
       expect(word!.definition, 'n. 苹果');
-      expect(word.source, contains('ECDICT'));
+      expect(word.source, 'Microsoft Translator');
       await tester.pumpAndSettle();
       await tester.pumpWidget(const SizedBox());
       await tester.pump(const Duration(milliseconds: 1));
     },
   );
 
-  testWidgets('empty, failed and English-only lookups are explicit', (
+  testWidgets('typing does not call the paid API until search is submitted', (
+    tester,
+  ) async {
+    await showHome(tester);
+    await tester.enterText(find.byKey(input), 'apple');
+    await tester.pump(const Duration(seconds: 1));
+    expect(dictionary.lookupCalls, 0);
+
+    await tester.tap(find.byTooltip('搜索'));
+    await tester.pumpAndSettle();
+    expect(dictionary.lookupCalls, 1);
+    expect(find.byKey(const Key('home-dictionary-result')), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(milliseconds: 1));
+  });
+
+  testWidgets('empty, failed and unconfigured lookups are explicit', (
     tester,
   ) async {
     dictionary.searchHandler = (_) async => [];
     await showHome(tester);
     await search(tester, '没收录');
-    expect(find.textContaining('试试更短的中文词语'), findsOneWidget);
-    dictionary.searchHandler = (_) async => throw StateError('unavailable');
+    expect(find.textContaining('暂未返回“没收录”'), findsOneWidget);
+    dictionary.searchHandler = (_) async =>
+        throw const DictionaryServiceException(
+          DictionaryFailureKind.notConfigured,
+        );
     await search(tester, '苹果');
-    expect(find.text('离线词典加载失败，请稍后重试'), findsOneWidget);
+    expect(find.text('请先在「我的 → 在线词典」配置 Microsoft Translator'), findsOneWidget);
     dictionary.lookupHandler = (_) async => const DictionaryEntry(
       term: 'rareword',
-      source: 'Open English WordNet',
+      source: 'Microsoft Translator',
       senses: [DictionarySense(partOfSpeech: 'n.', definition: 'English only')],
     );
     await search(tester, 'rareword');
-    expect(find.text('常用词库暂无中文释义'), findsOneWidget);
+    expect(find.text('在线查询失败，请稍后重试'), findsNothing);
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(milliseconds: 1));
   });

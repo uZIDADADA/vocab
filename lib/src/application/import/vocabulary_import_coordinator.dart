@@ -2,12 +2,16 @@ import '../../data/repositories/learning_repository.dart';
 import '../../domain/learning_models.dart';
 import '../../infrastructure/dictionary/dictionary_service.dart';
 
-/// Coordinates KISS imports with the bundled offline dictionaries.
+/// Coordinates KISS imports. Optional enrichment is retained for tests and
+/// embedders, but the app no longer sends imported terms to an online service.
 class VocabularyImportCoordinator {
-  const VocabularyImportCoordinator(this._repository, this._dictionaryService);
+  const VocabularyImportCoordinator(
+    this._repository, [
+    this._dictionaryService,
+  ]);
 
   final LearningRepository _repository;
-  final DictionaryService _dictionaryService;
+  final DictionaryService? _dictionaryService;
 
   Future<VocabularyImportResult> importVocabulary(
     Iterable<ImportedVocabularyCandidate> candidates,
@@ -35,9 +39,12 @@ class VocabularyImportCoordinator {
       return candidate;
     }
 
+    final dictionaryService = _dictionaryService;
+    if (dictionaryService == null) return candidate;
+
     DictionaryEntry? entry;
     try {
-      entry = await _dictionaryService.lookup(candidate.term);
+      entry = await dictionaryService.lookup(candidate.term);
     } on Object {
       // Dictionary enrichment is best effort; a failed lookup must not block
       // importing the user's browser favorites.
@@ -56,11 +63,13 @@ class VocabularyImportCoordinator {
               .join('\n');
     if (definition.isEmpty) return candidate;
 
-    final parts = entry.senses
-        .map((sense) => sense.partOfSpeech.trim())
-        .where((value) => value.isNotEmpty)
-        .toSet()
-        .join(' / ');
+    final parts = entry.partOfSpeech?.trim().isNotEmpty == true
+        ? entry.partOfSpeech!.trim()
+        : entry.senses
+              .map((sense) => sense.partOfSpeech.trim())
+              .where((value) => value.isNotEmpty)
+              .toSet()
+              .join(' / ');
     final dictionaryExamples = entry.senses
         .map((sense) => sense.example?.trim())
         .whereType<String>()

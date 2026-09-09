@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import '../../application/import/vocabulary_import_coordinator.dart';
@@ -8,6 +6,7 @@ import '../../data/repositories/conversation_repository.dart';
 import '../../data/repositories/kiss_worker_settings_repository.dart';
 import '../../data/repositories/learning_repository.dart';
 import '../../data/repositories/pronunciation_settings_repository.dart';
+import '../../data/repositories/translator_settings_repository.dart';
 import '../../infrastructure/ai/ai_chat_provider.dart';
 import '../../infrastructure/dictionary/dictionary_service.dart';
 import '../../infrastructure/pronunciation/pronunciation_service.dart';
@@ -28,6 +27,7 @@ class HomeScreen extends StatefulWidget {
     required this.vocabularyImportCoordinator,
     required this.conversationRepository,
     required this.pronunciationSettingsRepository,
+    required this.translatorSettingsRepository,
     required this.pronunciationService,
     required this.kissWorkerSettingsRepository,
     required this.kissVocabularyService,
@@ -41,6 +41,7 @@ class HomeScreen extends StatefulWidget {
   final VocabularyImportCoordinator vocabularyImportCoordinator;
   final ConversationRepository conversationRepository;
   final PronunciationSettingsRepository pronunciationSettingsRepository;
+  final TranslatorSettingsRepository translatorSettingsRepository;
   final PronunciationService pronunciationService;
   final KissWorkerSettingsRepository kissWorkerSettingsRepository;
   final KissVocabularyService kissVocabularyService;
@@ -54,21 +55,6 @@ class _HomeScreenState extends State<HomeScreen> {
   int _tabIndex = 0;
   int _librarySegment = 0;
   int _libraryNavigationVersion = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_repairImportedDefinitions());
-  }
-
-  Future<void> _repairImportedDefinitions() async {
-    try {
-      await widget.vocabularyImportCoordinator.repairImportedDefinitions();
-    } on Object {
-      // This is background, best-effort enrichment. The explicit KISS import
-      // path still reports actionable failures to the user.
-    }
-  }
 
   void _selectTab(int index) {
     if (_tabIndex == index) return;
@@ -156,6 +142,7 @@ class _HomeScreenState extends State<HomeScreen> {
               repository: widget.repository,
               pronunciationSettingsRepository:
                   widget.pronunciationSettingsRepository,
+              translatorSettingsRepository: widget.translatorSettingsRepository,
               kissWorkerSettingsRepository: widget.kissWorkerSettingsRepository,
               kissVocabularyService: widget.kissVocabularyService,
               vocabularyImportCoordinator: widget.vocabularyImportCoordinator,

@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import '../../data/repositories/kiss_worker_settings_repository.dart';
@@ -119,7 +117,6 @@ class _DictionarySearch extends StatefulWidget {
 
 class _DictionarySearchState extends State<_DictionarySearch> {
   final _controller = TextEditingController();
-  Timer? _debounce;
   DictionaryEntry? _entry;
   List<DictionaryMatch> _matches = const [];
   String? _message;
@@ -129,26 +126,15 @@ class _DictionarySearchState extends State<_DictionarySearch> {
 
   @override
   void dispose() {
-    _debounce?.cancel();
     _controller.dispose();
     super.dispose();
   }
 
   void _onChanged(String value) {
-    _debounce?.cancel();
     _clearResult();
-    if (value.trim().isEmpty) {
-      return;
-    }
-    if (_controller.value.composing.isValid &&
-        !_controller.value.composing.isCollapsed) {
-      return;
-    }
-    _debounce = Timer(const Duration(milliseconds: 450), () => _lookup(value));
   }
 
   void _clear() {
-    _debounce?.cancel();
     _controller.clear();
     _clearResult();
   }
@@ -165,7 +151,6 @@ class _DictionarySearchState extends State<_DictionarySearch> {
   }
 
   Future<void> _lookup(String rawTerm) async {
-    _debounce?.cancel();
     final term = rawTerm.trim();
     final request = ++_requestVersion;
     if (term.isEmpty) {
@@ -196,7 +181,9 @@ class _DictionarySearchState extends State<_DictionarySearch> {
         if (!mounted || request != _requestVersion) return;
         setState(() {
           _matches = matches;
-          _message = matches.isEmpty ? '常用词库暂未找到“$term”，试试更短的中文词语或英文单词' : null;
+          _message = matches.isEmpty
+              ? 'Microsoft Translator 暂未返回“$term”的英文结果'
+              : null;
           _isLoading = false;
         });
         return;
@@ -205,14 +192,32 @@ class _DictionarySearchState extends State<_DictionarySearch> {
       if (!mounted || request != _requestVersion) return;
       setState(() {
         _entry = entry;
-        _message = entry == null ? '本地词典暂未收录 “$term”' : null;
+        _message = entry == null
+            ? 'Microsoft Translator 暂未返回 “$term” 的中文结果'
+            : null;
+        _isLoading = false;
+      });
+    } on DictionaryServiceException catch (error) {
+      if (!mounted || request != _requestVersion) return;
+      setState(() {
+        _entry = null;
+        _message = switch (error.kind) {
+          DictionaryFailureKind.notConfigured =>
+            '请先在「我的 → 在线词典」配置 Microsoft Translator',
+          DictionaryFailureKind.authentication =>
+            'Microsoft Translator 鉴权失败，请检查 API Key 和 Region',
+          DictionaryFailureKind.rateLimited =>
+            'Microsoft Translator 请求过于频繁或额度已用完，请稍后重试',
+          DictionaryFailureKind.network => '网络连接失败，请检查网络后重试',
+          DictionaryFailureKind.service => 'Microsoft Translator 暂时不可用，请稍后重试',
+        };
         _isLoading = false;
       });
     } on Object {
       if (!mounted || request != _requestVersion) return;
       setState(() {
         _entry = null;
-        _message = '离线词典加载失败，请稍后重试';
+        _message = '在线查询失败，请稍后重试';
         _isLoading = false;
       });
     }
@@ -251,10 +256,20 @@ class _DictionarySearchState extends State<_DictionarySearch> {
             prefixIcon: const Icon(Icons.search_rounded),
             suffixIcon: _controller.text.isEmpty
                 ? null
-                : IconButton(
-                    onPressed: _clear,
-                    tooltip: '清空搜索',
-                    icon: const Icon(Icons.close_rounded),
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        onPressed: () => _lookup(_controller.text),
+                        tooltip: '搜索',
+                        icon: const Icon(Icons.arrow_forward_rounded),
+                      ),
+                      IconButton(
+                        onPressed: _clear,
+                        tooltip: '清空搜索',
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
                   ),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(22)),
             enabledBorder: OutlineInputBorder(
@@ -301,7 +316,7 @@ class _DictionarySearchState extends State<_DictionarySearch> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'ECDICT 常用词库 · ${_matches.length == 20 ? '前 20' : _matches.length} 个结果',
+                  'Microsoft Translator · ${_matches.length == 20 ? '前 20' : _matches.length} 个结果',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 for (final match in _matches)
@@ -405,10 +420,13 @@ class _DictionaryResultCard extends StatelessWidget {
                                       '${sense.partOfSpeech} ${sense.definition}',
                                 )
                                 .join('\n');
-                        final parts = entry.senses
-                            .map((sense) => sense.partOfSpeech)
-                            .toSet()
-                            .join(' / ');
+                        final parts =
+                            entry.partOfSpeech?.trim().isNotEmpty == true
+                            ? entry.partOfSpeech!.trim()
+                            : entry.senses
+                                  .map((sense) => sense.partOfSpeech)
+                                  .toSet()
+                                  .join(' / ');
                         String? example;
                         for (final sense in entry.senses) {
                           if (sense.example != null) {
@@ -446,9 +464,7 @@ class _DictionaryResultCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 10),
-              if (saved != null &&
-                  !saved.source.contains('Open English WordNet') &&
-                  !saved.source.contains('ECDICT')) ...[
+              if (saved != null && !saved.source.contains(entry.source)) ...[
                 Text('我的释义', style: Theme.of(context).textTheme.labelLarge),
                 const SizedBox(height: 3),
                 Text(
@@ -459,7 +475,7 @@ class _DictionaryResultCard extends StatelessWidget {
               ],
               if (entry.chineseDefinition case final chinese?) ...[
                 Text(
-                  '中文释义 · ECDICT',
+                  '中文翻译 · ${entry.chineseSource ?? entry.source}',
                   style: Theme.of(context).textTheme.labelLarge,
                 ),
                 if (entry.chineseHeadword != null &&
@@ -472,15 +488,11 @@ class _DictionaryResultCard extends StatelessWidget {
                 Text(chinese, style: Theme.of(context).textTheme.bodyLarge),
                 const SizedBox(height: 12),
               ] else ...[
-                Text(
-                  '常用词库暂无中文释义',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 12),
+                const SizedBox.shrink(),
               ],
               if (entry.senses.isNotEmpty) ...[
                 Text(
-                  '英文释义 · WordNet',
+                  '补充释义 · ${entry.source}',
                   style: Theme.of(context).textTheme.labelLarge,
                 ),
                 const SizedBox(height: 4),
@@ -511,7 +523,7 @@ class _DictionaryResultCard extends StatelessWidget {
               ],
               const SizedBox(height: 12),
               Text(
-                '${entry.source} · 本地词典 · 无需 API Key',
+                '${entry.source} · 在线查询',
                 style: const TextStyle(fontSize: 10, color: VocabColors.muted),
               ),
             ],

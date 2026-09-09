@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'application/import/vocabulary_import_coordinator.dart';
@@ -7,10 +9,11 @@ import 'data/repositories/conversation_repository.dart';
 import 'data/repositories/kiss_worker_settings_repository.dart';
 import 'data/repositories/learning_repository.dart';
 import 'data/repositories/pronunciation_settings_repository.dart';
+import 'data/repositories/translator_settings_repository.dart';
 import 'features/home/home_screen.dart';
 import 'infrastructure/ai/ai_chat_provider.dart';
 import 'infrastructure/dictionary/dictionary_service.dart';
-import 'infrastructure/dictionary/bilingual_dictionary_service.dart';
+import 'infrastructure/dictionary/microsoft_translator_dictionary_service.dart';
 import 'infrastructure/pronunciation/pronunciation_service.dart';
 import 'infrastructure/sync/kiss_worker_vocabulary_service.dart';
 import 'theme/vocab_theme.dart';
@@ -53,14 +56,19 @@ class _VocabAppState extends State<VocabApp> {
       KissWorkerSettingsRepository(_secretStore);
   late final PronunciationSettingsRepository _pronunciationSettingsRepository =
       PronunciationSettingsRepository(_secretStore);
+  late final TranslatorSettingsRepository _translatorSettingsRepository =
+      TranslatorSettingsRepository(_secretStore);
   late final bool _ownsAiChatProvider = widget.aiChatProvider == null;
   late final AiChatProvider _aiChatProvider =
       widget.aiChatProvider ?? OpenAiCompatibleChatProvider();
   late final bool _ownsDictionaryService = widget.dictionaryService == null;
   late final DictionaryService _dictionaryService =
-      widget.dictionaryService ?? BilingualDictionaryService();
+      widget.dictionaryService ??
+      MicrosoftTranslatorDictionaryService(
+        settingsRepository: _translatorSettingsRepository,
+      );
   late final VocabularyImportCoordinator _vocabularyImportCoordinator =
-      VocabularyImportCoordinator(_repository, _dictionaryService);
+      VocabularyImportCoordinator(_repository);
   late final bool _ownsPronunciationService =
       widget.pronunciationService == null;
   late final PronunciationService _pronunciationService =
@@ -72,6 +80,23 @@ class _VocabAppState extends State<VocabApp> {
       widget.kissVocabularyService == null;
   late final KissVocabularyService _kissVocabularyService =
       widget.kissVocabularyService ?? KissWorkerVocabularyService();
+
+  @override
+  void initState() {
+    super.initState();
+    if (_ownsDictionaryService) {
+      unawaited(_removeLegacyDictionaryCache());
+    }
+  }
+
+  Future<void> _removeLegacyDictionaryCache() async {
+    try {
+      await removeLegacyOfflineDictionaryCache();
+    } on Object {
+      // The cache contains only generated copies of former bundled assets.
+      // Cleanup failure must not prevent the application from starting.
+    }
+  }
 
   @override
   void dispose() {
@@ -107,6 +132,7 @@ class _VocabAppState extends State<VocabApp> {
         dictionaryService: _dictionaryService,
         vocabularyImportCoordinator: _vocabularyImportCoordinator,
         pronunciationSettingsRepository: _pronunciationSettingsRepository,
+        translatorSettingsRepository: _translatorSettingsRepository,
         pronunciationService: _pronunciationService,
         kissWorkerSettingsRepository: _kissWorkerSettingsRepository,
         kissVocabularyService: _kissVocabularyService,

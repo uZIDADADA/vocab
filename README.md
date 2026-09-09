@@ -185,6 +185,17 @@ three times. The protocol has no compare-and-swap guarantee; older Worker/KV
 deployments or other clients can still overwrite a whole book later. Real
 Worker and browser-extension interoperability still requires device validation.
 
+## Online dictionary search
+
+The home search box uses Microsoft Translator for English-to-Chinese and
+Chinese-to-English lookup. Open **我的 → 在线词典** and save the key from an
+Azure Translator resource; add its region when the resource requires one. The
+key and region remain in platform secure storage. Searches run only after the
+user submits them, and the searched text is sent to Microsoft for translation.
+The former bundled ECDICT and WordNet databases are no longer packaged, and a
+first launch after upgrading removes their generated on-device cache. KISS
+imports are not sent to the translation service automatically.
+
 ## Word pronunciation
 
 Word cards use the device's built-in English text-to-speech engine by default,
@@ -200,8 +211,9 @@ preferred for automatic playback, with another English voice as fallback.
 Optionally open **我的 → 单词发音** and save a Merriam-Webster Collegiate key.
 Configured keys take priority for default/US recorded pronunciation; lookup/download
 failures fall back to system speech. MW recordings use a 50 MB local cache,
-and the key remains in platform secure storage. Only the MW path sends the
-word to an online dictionary directly from the app. British pronunciation uses
+and the key remains in platform secure storage. The MW pronunciation path sends
+the word to Merriam-Webster; home searches separately send submitted text to
+Microsoft Translator. British pronunciation uses
 the system en-GB voice and never silently substitutes an American voice.
 The review screen shows existing phonetics, part of speech, meaning and example
 with separate UK/US speech buttons. Missing dictionary data is not fetched or
