@@ -34,6 +34,10 @@ migrate_working_dir/
 /ios/build/
 /coverage/
 
+# Deprecated generated offline dictionary databases must not return to Git.
+/assets/dictionary/*.sqlite
+/assets/dictionary/*.sqlite.gz
+
 # Symbolication related
 app.*.symbols
 

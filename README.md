@@ -193,8 +193,9 @@ Azure Translator resource; add its region when the resource requires one. The
 key and region remain in platform secure storage. Searches run only after the
 user submits them, and the searched text is sent to Microsoft for translation.
 The former bundled ECDICT and WordNet databases are no longer packaged, and a
-first launch after upgrading removes their generated on-device cache. KISS
-imports are not sent to the translation service automatically.
+first launch after upgrading removes their generated on-device cache. Their
+generated SQLite binaries are not kept in source control. KISS imports are not
+sent to the translation service automatically.
 
 ## Word pronunciation
 
